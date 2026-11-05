@@ -9,7 +9,14 @@
 #include "export.h"
 #include "audio.h"
 
+#include <string.h>
+
+#ifdef _WIN32
+#define FP_STRCASECMP _stricmp
+#else
 #include <strings.h>
+#define FP_STRCASECMP strcasecmp
+#endif
 
 #define DEFAULT_WINDOW_W 1080
 #define DEFAULT_WINDOW_H 740
@@ -20,7 +27,7 @@
 static bool has_wav_extension(const char *path) {
     if (!path) return false;
     size_t len = strlen(path);
-    return len > 4 && strcasecmp(path + len - 4, ".wav") == 0;
+    return len > 4 && FP_STRCASECMP(path + len - 4, ".wav") == 0;
 }
 
 int main(int argc, char *argv[]) {
