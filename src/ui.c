@@ -514,7 +514,7 @@ static void render_timeline(UIState *ui, CanvasProject *proj, SDL_Renderer *r) {
             snprintf(vo_str, sizeof(vo_str), "REC %.1fs", vo_duration_seconds(vo));
         } else if (vo->loaded) {
             snprintf(vo_str, sizeof(vo_str), "VO %.1fs%s", vo_duration_seconds(vo),
-                     vo->enabled ? "" : " (off)");
+                     vo->enabled ? "" : " off");
         } else {
             snprintf(vo_str, sizeof(vo_str), "VO none");
         }
