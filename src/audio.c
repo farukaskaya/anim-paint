@@ -299,12 +299,17 @@ static bool rec_reserve(Voiceover *vo, int extra) {
     int need = vo->rec_count + extra;
     if (need <= vo->rec_capacity) return true;
 
+    int hard_cap = VO_REC_RATE * VO_MAX_SECONDS;
+    int limit = (vo->rec_max_samples > 0 && vo->rec_max_samples < hard_cap)
+              ? vo->rec_max_samples : hard_cap;
+
+    if (need > limit) need = limit;
+    if (need <= vo->rec_capacity) return true;
+
     int cap = vo->rec_capacity > 0 ? vo->rec_capacity : VO_REC_RATE;
     while (cap < need) cap *= 2;
-
-    int max_samples = VO_REC_RATE * VO_MAX_SECONDS;
-    if (cap > max_samples) cap = max_samples;
-    if (need > cap) return false;
+    if (cap > limit) cap = limit;
+    if (cap < need) cap = need;
 
     int16_t *grown = (int16_t *)realloc(vo->rec_samples, (size_t)cap * sizeof(int16_t));
     if (!grown) return false;
@@ -313,9 +318,17 @@ static bool rec_reserve(Voiceover *vo, int extra) {
     return true;
 }
 
-bool vo_start_recording(Voiceover *vo, char *err, size_t err_size) {
+bool vo_start_recording(Voiceover *vo, double duration_seconds, char *err, size_t err_size) {
     if (!vo) return false;
     if (vo->recording) return true;
+
+    /* Capture exactly one animation pass: frames / fps seconds. */
+    if (duration_seconds <= 0.05) duration_seconds = 1.0;
+
+    int64_t want_samples = (int64_t)(duration_seconds * (double)VO_REC_RATE + 0.5);
+    int hard_cap = VO_REC_RATE * VO_MAX_SECONDS;
+    if (want_samples > hard_cap) want_samples = hard_cap;
+    if (want_samples < 1) want_samples = 1;
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) {
         set_error(err, err_size, "Audio unavailable: %s", SDL_GetError());
@@ -352,6 +365,9 @@ bool vo_start_recording(Voiceover *vo, char *err, size_t err_size) {
 
     vo->rec_count = 0;
     vo->rec_start_ticks = SDL_GetTicks();
+    vo->rec_max_samples = (int)want_samples;
+    vo->rec_target_seconds = (double)want_samples / (double)VO_REC_RATE;
+    vo->rec_limit_reached = false;
     vo->recording = true;
     vo->rec_error[0] = '\0';
     SDL_PauseAudioDevice(vo->rec_dev, 0);
@@ -387,13 +403,30 @@ bool vo_poll_recording(Voiceover *vo) {
             if (got <= 0) break;
 
             int n = got / (int)sizeof(int16_t);
+            if (n <= 0) break;
+
             if (!rec_reserve(vo, n)) {
                 snprintf(vo->rec_error, sizeof(vo->rec_error),
-                         "Recording stopped: 10 minute limit reached.");
+                         "Recording stopped: ran out of memory.");
                 return false;
             }
+
+            int room = vo->rec_max_samples - vo->rec_count;
+            if (room <= 0) {
+                vo->rec_limit_reached = true;
+                return false;
+            }
+            if (n > room) n = room;
+
             memcpy(vo->rec_samples + vo->rec_count, tmp, (size_t)n * sizeof(int16_t));
             vo->rec_count += n;
+
+            /* Stop as soon as the animation-length take is complete. */
+            if (vo->rec_count >= vo->rec_max_samples) {
+                vo->rec_count = vo->rec_max_samples;
+                vo->rec_limit_reached = true;
+                return false;
+            }
         }
     }
 
@@ -421,6 +454,20 @@ void vo_stop_recording(Voiceover *vo) {
         snprintf(vo->rec_error, sizeof(vo->rec_error),
                  "Nothing was recorded. Check that a microphone is connected and allowed.");
         return;
+    }
+
+    /* An auto-completed take is padded/trimmed to the animation length so the
+       voiceover lines up frame-for-frame with the exported video. */
+    if (vo->rec_limit_reached && vo->rec_max_samples > 0) {
+        if (vo->rec_count < vo->rec_max_samples) {
+            if (rec_reserve(vo, vo->rec_max_samples - vo->rec_count)) {
+                memset(vo->rec_samples + vo->rec_count, 0,
+                       (size_t)(vo->rec_max_samples - vo->rec_count) * sizeof(int16_t));
+                vo->rec_count = vo->rec_max_samples;
+            }
+        } else {
+            vo->rec_count = vo->rec_max_samples;
+        }
     }
 
     char err[VO_ERROR_LEN];

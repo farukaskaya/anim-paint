@@ -43,12 +43,13 @@
 - **Frame Management:** Add new frames (`+ Frame`), Duplicate (`Dup`), Delete (`Del`), or reorder.
 
 ### 🎙️ Voiceover for MP4
-- **Record from microphone:** *Voiceover → Record Voiceover* (or `Ctrl + R`), click **STOP** when done. The take is written to `voiceover.wav`.
+- **Record from microphone:** *Voiceover → Record Voiceover* (or `Ctrl + R`).
+- **Locked to the animation length:** the take is exactly `frame_count / fps` seconds. Recording starts playback from frame 1 and stops automatically when the last frame is reached — just like Flipnote Studio, so you always know which frame you are voicing.
 - **Import a WAV:** drop any `.wav` file onto the window, or place `voiceover.wav` next to the app and use *Voiceover → Import voiceover.wav*.
 - **Preview before exporting:** *Voiceover → Preview Voiceover* plays the take through your speakers.
 - **MP4 only:** when a voiceover is loaded, *File → Export MP4* automatically muxes it as an AAC track trimmed to the animation length. Toggle it off with *Voiceover → Voiceover in MP4*.
 - **Supported input:** PCM WAV, 8/16/24/32-bit or 32-bit float, mono or stereo (downmixed to mono).
-- Recordings are capped at 10 minutes and can be re-recorded at any time.
+- Takes are padded with silence or trimmed so the audio and video end together.
 
 ### 🚀 Direct MP4 & GIF Export (via ffmpeg)
 - **One-Click MP4:** Directly encodes high-compatibility H.264 video (`output.mp4`) ready for web, Discord, YouTube, or social media.
@@ -96,10 +97,10 @@
 4. Click outside the selection or press `Esc` to deselect. `Ctrl + Z` undoes a move.
 
 ### Voiceover workflow
-1. Record a take with `Ctrl + R` (or drag a `.wav` onto the window).
-2. Press *Play VO* in the timeline to check timing.
-3. Use `Ctrl + E` to export — the MP4 now carries the voiceover.
-4. If the audio runs longer than the animation it is trimmed; shorter audio simply ends early.
+1. Press `Ctrl + R`: the animation starts playing from frame 1 and Faruk Paint records one full pass.
+2. Recording stops on its own at the last frame — the take length is exactly `frame_count / fps`.
+3. Press *Play VO* in the timeline to check timing.
+4. Use `Ctrl + E` to export — the MP4 now carries the voiceover.
 5. Toggle *Voiceover → Voiceover in MP4* to export a silent MP4 without deleting the take.
 
 ---

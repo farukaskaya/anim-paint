@@ -112,6 +112,88 @@ void ui_notify(UIState *ui, const char *msg) {
     ui->modal_message_time = SDL_GetTicks();
 }
 
+/* Animation length in seconds: frame_count / fps. */
+double ui_animation_duration(const CanvasProject *proj) {
+    if (!proj) return 0.0;
+    int fps = proj->fps > 0 ? proj->fps : 12;
+    if (proj->frame_count <= 0) return 0.0;
+    return (double)proj->frame_count / (double)fps;
+}
+
+/* Start recording, or stop an in-progress take. Recording length always equals
+   the animation length and playback runs once from frame 0 while capturing. */
+void ui_voiceover_toggle_record(UIState *ui, CanvasProject *proj) {
+    Voiceover *vo = ui->vo;
+    if (!vo) return;
+
+    if (vo->recording) {
+        ui_voiceover_stop_recording(ui, proj, false);
+        return;
+    }
+
+    double duration = ui_animation_duration(proj);
+    if (duration <= 0.0) {
+        ui_notify(ui, "Add at least one frame before recording");
+        return;
+    }
+
+    char err[VO_ERROR_LEN];
+    err[0] = '\0';
+    if (!vo_start_recording(vo, duration, err, sizeof(err))) {
+        ui_notify(ui, err);
+        return;
+    }
+
+    /* Play the animation exactly once so the take lines up with the frames. */
+    if (!ui->rec_loop_saved) {
+        ui->rec_was_loop = proj->loop;
+        ui->rec_loop_saved = true;
+    }
+    proj->loop = false;
+    proj->current_frame = 0;
+    proj->play_accum_ms = 0;
+    proj->is_playing = true;
+    proj->canvas_dirty = true;
+
+    char msg[160];
+    snprintf(msg, sizeof(msg), "Recording %.1fs - animation is playing along", duration);
+    ui_notify(ui, msg);
+}
+
+/* Finish a take: stop capture, restore playback state and report the result. */
+void ui_voiceover_stop_recording(UIState *ui, CanvasProject *proj, bool auto_completed) {
+    Voiceover *vo = ui->vo;
+    if (!vo) return;
+
+    bool was_recording = vo->recording;
+    if (was_recording) {
+        vo_stop_recording(vo);
+    }
+
+    if (ui->rec_loop_saved) {
+        proj->loop = ui->rec_was_loop;
+        ui->rec_loop_saved = false;
+    }
+    proj->is_playing = false;
+    proj->current_frame = 0;
+    proj->play_accum_ms = 0;
+    proj->canvas_dirty = true;
+
+    if (vo->rec_error[0]) {
+        ui_notify(ui, vo->rec_error);
+        return;
+    }
+    if (!was_recording) return;
+
+    if (vo->loaded) {
+        char msg[160];
+        snprintf(msg, sizeof(msg), "%s Voiceover %.2fs matched to animation (%.2fs)",
+                 auto_completed ? "Take complete." : "Recording stopped.",
+                 vo_duration_seconds(vo), ui_animation_duration(proj));
+        ui_notify(ui, msg);
+    }
+}
+
 /* 3D Bevel routines */
 void ui_draw_bevel_raised(SDL_Renderer *r, int x, int y, int w, int h) {
     SDL_SetRenderDrawColor(r, UI_LIGHT_COLOR);
@@ -509,9 +591,11 @@ static void render_timeline(UIState *ui, CanvasProject *proj, SDL_Renderer *r) {
         ui_draw_button(r, vx, ly, 60, 26, vo->recording, vo->recording ? "STOP" : "REC");
         ui_draw_button(r, vx + 65, ly, 62, 26, vo->playing, vo->playing ? "Stop" : "Play VO");
 
-        char vo_str[48];
+        char vo_str[64];
         if (vo->recording) {
-            snprintf(vo_str, sizeof(vo_str), "REC %.1fs", vo_duration_seconds(vo));
+            double target = vo->rec_target_seconds > 0.0 ? vo->rec_target_seconds
+                                                          : ui_animation_duration(proj);
+            snprintf(vo_str, sizeof(vo_str), "REC %.1f/%.1fs", vo_duration_seconds(vo), target);
         } else if (vo->loaded) {
             snprintf(vo_str, sizeof(vo_str), "VO %.1fs%s", vo_duration_seconds(vo),
                      vo->enabled ? "" : " off");
@@ -823,24 +907,7 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
                 char err[VO_ERROR_LEN];
                 switch (item_idx) {
                     case 0: /* Record / Stop */
-                        if (vo->recording) {
-                            vo_stop_recording(vo);
-                            if (vo->rec_error[0]) {
-                                ui_notify(ui, vo->rec_error);
-                            } else if (vo->loaded) {
-                                char msg[96];
-                                snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
-                                         vo_duration_seconds(vo), VO_DEFAULT_PATH);
-                                ui_notify(ui, msg);
-                            }
-                        } else {
-                            err[0] = '\0';
-                            if (vo_start_recording(vo, err, sizeof(err))) {
-                                ui_notify(ui, "Recording... choose Stop Recording when done");
-                            } else {
-                                ui_notify(ui, err);
-                            }
-                        }
+                        ui_voiceover_toggle_record(ui, proj);
                         break;
                     case 1: /* Import fixed-name WAV */
                         err[0] = '\0';
@@ -1087,24 +1154,7 @@ bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, 
             char err[VO_ERROR_LEN];
 
             if (mx >= vx && mx < vx + 60 && my >= ly && my < ly + 26) {
-                if (vo->recording) {
-                    vo_stop_recording(vo);
-                    if (vo->rec_error[0]) {
-                        ui_notify(ui, vo->rec_error);
-                    } else if (vo->loaded) {
-                        char msg[96];
-                        snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
-                                 vo_duration_seconds(vo), VO_DEFAULT_PATH);
-                        ui_notify(ui, msg);
-                    }
-                } else {
-                    err[0] = '\0';
-                    if (vo_start_recording(vo, err, sizeof(err))) {
-                        ui_notify(ui, "Recording... click STOP when done");
-                    } else {
-                        ui_notify(ui, err);
-                    }
-                }
+                ui_voiceover_toggle_record(ui, proj);
                 return true;
             }
 

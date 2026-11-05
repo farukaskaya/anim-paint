@@ -54,6 +54,10 @@ typedef struct {
     /* Voiceover track (owned by main). NULL disables the Sound menu. */
     Voiceover *vo;
 
+    /* Playback state saved while a voiceover take is recording. */
+    bool rec_loop_saved;
+    bool rec_was_loop;
+
     /* Timeline scroll */
     int timeline_scroll_x;
 } UIState;
@@ -80,5 +84,10 @@ bool ui_screen_to_canvas(UIState *ui, CanvasProject *proj, int mx, int my, int *
 
 /* Notification banner */
 void ui_notify(UIState *ui, const char *msg);
+
+/* Voiceover recording helpers (keep playback and audio in sync). */
+double ui_animation_duration(const CanvasProject *proj);
+void ui_voiceover_toggle_record(UIState *ui, CanvasProject *proj);
+void ui_voiceover_stop_recording(UIState *ui, CanvasProject *proj, bool auto_completed);
 
 #endif /* UI_H */

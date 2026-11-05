@@ -36,6 +36,9 @@ typedef struct {
     int rec_count;
     int rec_capacity;
     uint32_t rec_start_ticks;
+    int rec_max_samples;                /* 0 = use the 10 minute cap     */
+    double rec_target_seconds;          /* Animation length to fill      */
+    bool rec_limit_reached;             /* True once the take is full    */
     char rec_error[VO_ERROR_LEN];
 } Voiceover;
 
@@ -48,8 +51,10 @@ bool vo_load_wav(Voiceover *vo, const char *path, char *err, size_t err_size);
 /* Write the current clip back out as 16-bit mono WAV. */
 bool vo_save_wav(const Voiceover *vo, const char *path, char *err, size_t err_size);
 
-/* Recording lifecycle. Poll must be called regularly while recording. */
-bool vo_start_recording(Voiceover *vo, char *err, size_t err_size);
+/* Recording lifecycle. Poll must be called regularly while recording.
+   duration_seconds sets how much audio to capture (typically frames / fps);
+   recording stops automatically once that much has been captured. */
+bool vo_start_recording(Voiceover *vo, double duration_seconds, char *err, size_t err_size);
 bool vo_poll_recording(Voiceover *vo);
 void vo_stop_recording(Voiceover *vo);
 

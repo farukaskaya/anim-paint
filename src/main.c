@@ -230,37 +230,23 @@ int main(int argc, char *argv[]) {
                         bool ok = export_to_gif(proj, "output.gif", proj->fps);
                         ui_notify(&ui, ok ? "Exported output.gif!" : export_get_last_error());
                     } else if (ctrl && e.key.keysym.sym == SDLK_r) {
-                        /* Toggle microphone recording */
-                        if (vo.recording) {
-                            vo_stop_recording(&vo);
-                            if (vo.rec_error[0]) {
-                                ui_notify(&ui, vo.rec_error);
-                            } else if (vo.loaded) {
-                                char msg[96];
-                                snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
-                                         vo_duration_seconds(&vo), VO_DEFAULT_PATH);
-                                ui_notify(&ui, msg);
-                            }
-                        } else {
-                            char err[VO_ERROR_LEN];
-                            err[0] = '\0';
-                            if (vo_start_recording(&vo, err, sizeof(err))) {
-                                ui_notify(&ui, "Recording... press Ctrl+R to stop");
-                            } else {
-                                ui_notify(&ui, err);
-                            }
-                        }
+                        /* Record one animation-length take (animation plays along) */
+                        ui_voiceover_toggle_record(&ui, proj);
                     } else {
                         switch (e.key.keysym.sym) {
                             case SDLK_SPACE:
-                                proj->is_playing = !proj->is_playing;
-                                proj->canvas_dirty = true;
+                                if (!vo.recording) {
+                                    proj->is_playing = !proj->is_playing;
+                                    proj->canvas_dirty = true;
+                                }
                                 break;
                             case SDLK_LEFT:
-                                if (proj->current_frame > 0) canvas_set_current_frame(proj, proj->current_frame - 1);
+                                if (!vo.recording && proj->current_frame > 0)
+                                    canvas_set_current_frame(proj, proj->current_frame - 1);
                                 break;
                             case SDLK_RIGHT:
-                                if (proj->current_frame < proj->frame_count - 1) canvas_set_current_frame(proj, proj->current_frame + 1);
+                                if (!vo.recording && proj->current_frame < proj->frame_count - 1)
+                                    canvas_set_current_frame(proj, proj->current_frame + 1);
                                 break;
                             case SDLK_TAB:
                                 canvas_toggle_active_layer(proj);
@@ -298,10 +284,10 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Keep microphone capture and preview playback moving. */
+        /* Keep microphone capture and preview playback moving. When the take
+           reaches the animation length, finish it and restore playback. */
         if (vo.recording && !vo_poll_recording(&vo)) {
-            vo_stop_recording(&vo);
-            ui_notify(&ui, vo.rec_error[0] ? vo.rec_error : "Recording stopped");
+            ui_voiceover_stop_recording(&ui, proj, true);
         }
         vo_poll_playback(&vo);
 

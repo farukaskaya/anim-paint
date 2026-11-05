@@ -185,12 +185,34 @@ int main() {
     loaded_vo.enabled = true;
     printf("[PASS] Voiceover can be excluded from MP4 export\n");
 
+    /* 11. Recording is limited to the animation length (frames / fps) */
+    {
+        Voiceover rec;
+        vo_init(&rec);
+        const double target = 8.0 / 12.0;      /* 8 frames at 12 fps */
+        char rerr[VO_ERROR_LEN];
+        rerr[0] = '\0';
+        if (vo_start_recording(&rec, target, rerr, sizeof(rerr))) {
+            int expected = (int)(target * 44100.0 + 0.5);
+            assert(rec.rec_max_samples == expected);
+            assert(rec.rec_target_seconds > target - 0.001 &&
+                   rec.rec_target_seconds < target + 0.001);
+            vo_stop_recording(&rec);
+            printf("[PASS] Recording target matches animation length (%.2fs -> %d samples)\n",
+                   target, expected);
+        } else {
+            /* No audio device in this environment; duration math is still testable. */
+            printf("[SKIP] Microphone unavailable (%s)\n", rerr);
+        }
+        vo_shutdown(&rec);
+    }
+
     vo_shutdown(&loaded_vo);
     vo_shutdown(&vo);
     remove("test_voiceover.wav");
     remove("test_audio.mp4");
 
-    /* 11. Error reporting */
+    /* 12. Error reporting */
     assert(!project_save(proj, "/nonexistent-dir/x.fpaint"));
     assert(strlen(export_get_last_error()) > 0);
     printf("[PASS] Failure reasons are reported\n");
