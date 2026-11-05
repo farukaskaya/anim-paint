@@ -443,9 +443,9 @@ static void render_timeline(UIState *ui, CanvasProject *proj, SDL_Renderer *r) {
 
     /* 2. Playback & Frame Actions */
     int ax = lx + 285;
-    ui_draw_button(r, ax, ly, 55, 26, false, "◀ Prev");
-    ui_draw_button(r, ax + 60, ly, 65, 26, proj->is_playing, proj->is_playing ? "⏸ Pause" : "▶ Play");
-    ui_draw_button(r, ax + 130, ly, 55, 26, false, "Next ▶");
+    ui_draw_button(r, ax, ly, 55, 26, false, "< Prev");
+    ui_draw_button(r, ax + 60, ly, 65, 26, proj->is_playing, proj->is_playing ? "Pause" : "> Play");
+    ui_draw_button(r, ax + 130, ly, 55, 26, false, "Next >");
 
     /* FPS Control */
     char fps_str[32];

@@ -108,7 +108,7 @@ void font_draw_char(SDL_Renderer *renderer, char c, int x, int y, SDL_Color colo
     for (int row = 0; row < 8; row++) {
         uint8_t byte = bitmap[row];
         for (int col = 0; col < 8; col++) {
-            if (byte & (1 << col)) {
+            if (byte & (0x80 >> col)) {
                 if (scale <= 1) {
                     SDL_RenderDrawPoint(renderer, x + col, y + row);
                 } else {
