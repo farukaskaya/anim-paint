@@ -18,7 +18,7 @@ endif
 CFLAGS ?= -Wall -Wextra -O2 -std=c99 $(SDL_CFLAGS)
 LIBS ?= $(SDL_LIBS) -lm
 
-SRC = src/main.c src/canvas.c src/tools.c src/ui.c src/font.c src/export.c
+SRC = src/main.c src/canvas.c src/tools.c src/ui.c src/font.c src/export.c src/audio.c
 OBJ = $(SRC:src/%.c=build/%.o)
 TARGET = farukpaint
 
@@ -40,7 +40,7 @@ run: $(TARGET)
 	./$(TARGET)
 
 test: $(TARGET)
-	$(CC) $(CFLAGS) tests/test_farukpaint.c src/canvas.c src/tools.c src/font.c src/export.c -o tests/test_farukpaint $(LIBS)
+	$(CC) $(CFLAGS) tests/test_farukpaint.c src/canvas.c src/tools.c src/font.c src/export.c src/audio.c -o tests/test_farukpaint $(LIBS)
 	cd tests && ./test_farukpaint
 
 appimage: $(TARGET)

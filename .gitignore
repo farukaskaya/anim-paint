@@ -2,9 +2,12 @@ build/
 dist/
 farukpaint
 farukpaint.exe
-tests/test_anim
+tests/test_farukpaint
 tests/test_output.mp4
 tests/test_output.gif
 output.mp4
 output.gif
 *.fpaint
+voiceover.wav
+tests/test_voiceover.wav
+tests/test_audio.mp4

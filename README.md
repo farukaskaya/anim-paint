@@ -42,6 +42,14 @@
 - **FPS Controller:** Adjustable framerate (1 to 30 FPS).
 - **Frame Management:** Add new frames (`+ Frame`), Duplicate (`Dup`), Delete (`Del`), or reorder.
 
+### 🎙️ Voiceover for MP4
+- **Record from microphone:** *Voiceover → Record Voiceover* (or `Ctrl + R`), click **STOP** when done. The take is written to `voiceover.wav`.
+- **Import a WAV:** drop any `.wav` file onto the window, or place `voiceover.wav` next to the app and use *Voiceover → Import voiceover.wav*.
+- **Preview before exporting:** *Voiceover → Preview Voiceover* plays the take through your speakers.
+- **MP4 only:** when a voiceover is loaded, *File → Export MP4* automatically muxes it as an AAC track trimmed to the animation length. Toggle it off with *Voiceover → Voiceover in MP4*.
+- **Supported input:** PCM WAV, 8/16/24/32-bit or 32-bit float, mono or stereo (downmixed to mono).
+- Recordings are capped at 10 minutes and can be re-recorded at any time.
+
 ### 🚀 Direct MP4 & GIF Export (via ffmpeg)
 - **One-Click MP4:** Directly encodes high-compatibility H.264 video (`output.mp4`) ready for web, Discord, YouTube, or social media.
 - **High-Quality GIF:** Two-pass palette generation (`output.gif`) with zero color banding.
@@ -67,6 +75,7 @@
 | `Ctrl + N` | New Animation |
 | `Ctrl + E` | Export MP4 (`output.mp4`) |
 | `Ctrl + G` | Export GIF (`output.gif`) |
+| `Ctrl + R` | Start / stop voiceover recording |
 | `P` | Select **Pencil** Tool |
 | `B` | Select **Brush** Tool |
 | `E` | Select **Eraser** Tool |
@@ -85,6 +94,13 @@
 2. Release to close the shape — only pixels **inside** the lasso are selected.
 3. Click inside the selection and drag to move it. The source area is cut away automatically.
 4. Click outside the selection or press `Esc` to deselect. `Ctrl + Z` undoes a move.
+
+### Voiceover workflow
+1. Record a take with `Ctrl + R` (or drag a `.wav` onto the window).
+2. Press *Play VO* in the timeline to check timing.
+3. Use `Ctrl + E` to export — the MP4 now carries the voiceover.
+4. If the audio runs longer than the animation it is trimmed; shorter audio simply ends early.
+5. Toggle *Voiceover → Voiceover in MP4* to export a silent MP4 without deleting the take.
 
 ---
 
@@ -177,6 +193,7 @@ faruk-paint/
 │   ├── tools.h/c                 # 16 classic drawing tools & shape algorithms
 │   ├── ui.h/c                    # Retro Windows 95 beveled UI & timeline renderer
 │   ├── export.h/c                # FFmpeg pipe exporter for MP4, GIF & .fpaint project format
+│   ├── audio.h/c                 # Voiceover recording, WAV import/export & preview
 │   └── font.h/c                  # Embedded 8x8 retro bitmap font
 └── tests/
     └── test_farukpaint.c               # Automated test suite

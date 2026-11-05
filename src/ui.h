@@ -3,6 +3,7 @@
 
 #include "canvas.h"
 #include "tools.h"
+#include "audio.h"
 #include <SDL2/SDL.h>
 
 #define UI_BG_COLOR       0xC0, 0xC0, 0xC0, 0xFF
@@ -42,13 +43,16 @@ typedef struct {
     /* Dialog / Modal states */
     bool show_export_modal;
     bool show_new_modal;
-    char modal_message[128];
+    char modal_message[320];
     uint32_t modal_message_time;
 
     /* Menu dropdown */
-    int active_menu;     /* -1: none, 0: File, 1: Edit, 2: View, 3: Animation, 4: Help */
+    int active_menu;     /* -1: none, 0: File, 1: Edit, 2: View, 3: Animation, 4: Help, 5: Voiceover */
     int hovered_menu_item;
     bool should_quit;
+
+    /* Voiceover track (owned by main). NULL disables the Sound menu. */
+    Voiceover *vo;
 
     /* Timeline scroll */
     int timeline_scroll_x;

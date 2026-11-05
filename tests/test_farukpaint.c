@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <assert.h>
 #include "../src/canvas.h"
 #include "../src/export.h"
 #include "../src/tools.h"
+#include "../src/audio.h"
 
 int main() {
     printf("=== Running Faruk Paint Automated Tests ===\n");
@@ -124,7 +126,71 @@ int main() {
     assert(strlen(export_get_last_error()) == 0); /* success clears the error */
     printf("[PASS] Export to GIF (test_output.gif)\n");
 
-    /* 8. Error reporting */
+    /* 8. Voiceover: WAV round-trip */
+    Voiceover vo;
+    vo_init(&vo);
+
+    const int rate = 44100;
+    const int secs  = 2;
+    const int count = rate * secs;
+    int16_t *tone = (int16_t *)malloc((size_t)count * sizeof(int16_t));
+    assert(tone != NULL);
+    for (int i = 0; i < count; i++) {
+        tone[i] = (int16_t)(12000.0 * sin(2.0 * 3.14159265358979 * 440.0 * i / rate));
+    }
+    vo.samples = tone;
+    vo.sample_count = count;
+    vo.sample_rate = rate;
+    vo.loaded = true;
+    vo.enabled = true;
+
+    char err[VO_ERROR_LEN];
+    err[0] = '\0';
+    assert(vo_save_wav(&vo, "test_voiceover.wav", err, sizeof(err)));
+    assert(vo_duration_seconds(&vo) > 1.99 && vo_duration_seconds(&vo) < 2.01);
+    printf("[PASS] Voiceover WAV written (%.2fs)\n", vo_duration_seconds(&vo));
+
+    Voiceover loaded_vo;
+    vo_init(&loaded_vo);
+    err[0] = '\0';
+    assert(vo_load_wav(&loaded_vo, "test_voiceover.wav", err, sizeof(err)));
+    assert(loaded_vo.loaded);
+    assert(loaded_vo.sample_rate == rate);
+    assert(loaded_vo.sample_count == count);
+    assert(loaded_vo.samples[1000] == tone[1000]);
+    printf("[PASS] Voiceover WAV loaded back with matching samples\n");
+
+    /* 9. Export MP4 with the voiceover muxed in */
+    printf("Testing MP4 export with voiceover...\n");
+    const char *vo_path = vo_export_path(&loaded_vo);
+    assert(vo_path != NULL);
+    bool mp4_audio_ok = export_to_mp4_with_audio(proj, "test_audio.mp4", 12, vo_path);
+    assert(mp4_audio_ok);
+    assert(strlen(export_get_last_error()) == 0);
+
+    /* Confirm ffmpeg actually wrote an audio stream into the container. */
+    FILE *probe = popen("ffprobe -v error -select_streams a -show_entries stream=codec_type "
+                        "-of csv=p=0 test_audio.mp4 2>/dev/null", "r");
+    assert(probe != NULL);
+    char probe_out[64] = {0};
+    size_t got = fread(probe_out, 1, sizeof(probe_out) - 1, probe);
+    pclose(probe);
+    probe_out[got] = '\0';
+    assert(strstr(probe_out, "audio") != NULL);
+    printf("[PASS] MP4 export includes an audio track\n");
+
+    /* 10. Voiceover toggle keeps the file out of the export when disabled */
+    loaded_vo.enabled = false;
+    assert(vo_export_path(&loaded_vo) == NULL);
+    loaded_vo.enabled = true;
+    printf("[PASS] Voiceover can be excluded from MP4 export\n");
+
+    vo_shutdown(&loaded_vo);
+    vo_shutdown(&vo);
+    remove("test_voiceover.wav");
+    remove("test_audio.mp4");
+
+    /* 11. Error reporting */
     assert(!project_save(proj, "/nonexistent-dir/x.fpaint"));
     assert(strlen(export_get_last_error()) > 0);
     printf("[PASS] Failure reasons are reported\n");

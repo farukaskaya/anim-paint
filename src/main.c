@@ -7,16 +7,26 @@
 #include "tools.h"
 #include "ui.h"
 #include "export.h"
+#include "audio.h"
+
+#include <strings.h>
 
 #define DEFAULT_WINDOW_W 1080
 #define DEFAULT_WINDOW_H 740
 #define DEFAULT_CANVAS_W 640
 #define DEFAULT_CANVAS_H 480
 
+/* Case-insensitive .wav check for drag-and-drop. */
+static bool has_wav_extension(const char *path) {
+    if (!path) return false;
+    size_t len = strlen(path);
+    return len > 4 && strcasecmp(path + len - 4, ".wav") == 0;
+}
+
 int main(int argc, char *argv[]) {
     (void)argc;
     (void)argv;
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
         return 1;
     }
@@ -57,8 +67,14 @@ int main(int argc, char *argv[]) {
     ToolState ts;
     tools_init(&ts);
 
+    Voiceover vo;
+    vo_init(&vo);
+
     UIState ui;
     ui_init(&ui, DEFAULT_WINDOW_W, DEFAULT_WINDOW_H);
+    ui.vo = &vo;
+
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     Uint32 last_frame_time = SDL_GetTicks();
     bool running = true;
@@ -127,6 +143,27 @@ int main(int argc, char *argv[]) {
                     ui_handle_mouse_wheel(&ui, e.wheel.y);
                     break;
 
+                case SDL_DROPFILE: {
+                    if (e.drop.file) {
+                        if (has_wav_extension(e.drop.file)) {
+                            char err[VO_ERROR_LEN];
+                            err[0] = '\0';
+                            if (vo_load_wav(&vo, e.drop.file, err, sizeof(err))) {
+                                char msg[640];
+                                snprintf(msg, sizeof(msg), "Loaded voiceover: %.1fs",
+                                         vo_duration_seconds(&vo));
+                                ui_notify(&ui, msg);
+                            } else {
+                                ui_notify(&ui, err);
+                            }
+                        } else {
+                            ui_notify(&ui, "Drop a .wav file to use it as the voiceover");
+                        }
+                        SDL_free(e.drop.file);
+                    }
+                    break;
+                }
+
                 case SDL_KEYDOWN: {
                     /* If typing text in Text tool */
                     if (ts.text_active) {
@@ -179,15 +216,40 @@ int main(int argc, char *argv[]) {
                         ui.pan_x = 0; ui.pan_y = 0;
                         ui_notify(&ui, "New Animation");
                     } else if (ctrl && e.key.keysym.sym == SDLK_e) {
-                        ui_notify(&ui, "Exporting to output.mp4...");
+                        const char *audio = vo_export_path(&vo);
+                        ui_notify(&ui, audio ? "Exporting to output.mp4 with voiceover..."
+                                             : "Exporting to output.mp4...");
                         SDL_RenderPresent(renderer);
-                        bool ok = export_to_mp4(proj, "output.mp4", proj->fps);
-                        ui_notify(&ui, ok ? "Exported output.mp4!" : export_get_last_error());
+                        bool ok = export_to_mp4_with_audio(proj, "output.mp4", proj->fps, audio);
+                        ui_notify(&ui, ok ? (audio ? "Exported output.mp4 with voiceover!"
+                                                   : "Exported output.mp4!")
+                                          : export_get_last_error());
                     } else if (ctrl && e.key.keysym.sym == SDLK_g) {
                         ui_notify(&ui, "Exporting to output.gif...");
                         SDL_RenderPresent(renderer);
                         bool ok = export_to_gif(proj, "output.gif", proj->fps);
                         ui_notify(&ui, ok ? "Exported output.gif!" : export_get_last_error());
+                    } else if (ctrl && e.key.keysym.sym == SDLK_r) {
+                        /* Toggle microphone recording */
+                        if (vo.recording) {
+                            vo_stop_recording(&vo);
+                            if (vo.rec_error[0]) {
+                                ui_notify(&ui, vo.rec_error);
+                            } else if (vo.loaded) {
+                                char msg[96];
+                                snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
+                                         vo_duration_seconds(&vo), VO_DEFAULT_PATH);
+                                ui_notify(&ui, msg);
+                            }
+                        } else {
+                            char err[VO_ERROR_LEN];
+                            err[0] = '\0';
+                            if (vo_start_recording(&vo, err, sizeof(err))) {
+                                ui_notify(&ui, "Recording... press Ctrl+R to stop");
+                            } else {
+                                ui_notify(&ui, err);
+                            }
+                        }
                     } else {
                         switch (e.key.keysym.sym) {
                             case SDLK_SPACE:
@@ -236,12 +298,20 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        /* Keep microphone capture and preview playback moving. */
+        if (vo.recording && !vo_poll_recording(&vo)) {
+            vo_stop_recording(&vo);
+            ui_notify(&ui, vo.rec_error[0] ? vo.rec_error : "Recording stopped");
+        }
+        vo_poll_playback(&vo);
+
         ui_render(&ui, proj, &ts, renderer);
         SDL_RenderPresent(renderer);
 
         SDL_Delay(16);
     }
 
+    vo_shutdown(&vo);
     canvas_destroy(proj);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);

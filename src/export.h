@@ -7,6 +7,10 @@
 /* Export animation to MP4 video using ffmpeg */
 bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps);
 
+/* Export MP4 with a voiceover track muxed in (audio_path may be NULL). */
+bool export_to_mp4_with_audio(CanvasProject *proj, const char *filepath, int fps,
+                              const char *audio_path);
+
 /* Export animation to high-quality GIF using ffmpeg */
 bool export_to_gif(CanvasProject *proj, const char *filepath, int fps);
 

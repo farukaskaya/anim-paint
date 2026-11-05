@@ -49,13 +49,26 @@ typedef struct {
     const char *items[8];
 } MenuDef;
 
-static MenuDef g_menus[5] = {
+static MenuDef g_menus[6] = {
     { "File", 0, 0, 6, { "New Animation", "Open (.fpaint)", "Save (.fpaint)", "Export MP4", "Export GIF", "Exit" } },
     { "Edit", 0, 0, 3, { "Undo", "Redo", "Clear Frame" } },
     { "View", 0, 0, 6, { "Zoom 100% (1x)", "Zoom 200% (2x)", "Zoom 400% (4x)", "Zoom 800% (8x)", "Center View", "Toggle Onion Skin" } },
     { "Animation", 0, 0, 7, { "Play / Pause", "Next Frame", "Prev Frame", "Add Frame", "Duplicate Frame", "Delete Frame", "Switch Layer" } },
+    { "Voiceover", 0, 0, 5, { "Record Voiceover", "Import voiceover.wav", "Preview Voiceover", "Voiceover in MP4: ON", "Clear Voiceover" } },
     { "Help", 0, 0, 2, { "Shortcuts Guide", "About Faruk Paint" } }
 };
+
+/* Menu labels that depend on runtime state. */
+static const char *menu_item_label(UIState *ui, int menu_idx, int item_idx) {
+    if (menu_idx == 4 && ui->vo) {
+        switch (item_idx) {
+            case 0: return ui->vo->recording ? "Stop Recording" : "Record Voiceover";
+            case 2: return ui->vo->playing ? "Stop Preview" : "Preview Voiceover";
+            case 3: return ui->vo->enabled ? "Voiceover in MP4: ON" : "Voiceover in MP4: OFF";
+        }
+    }
+    return g_menus[menu_idx].items[item_idx];
+}
 
 void ui_init(UIState *ui, int window_w, int window_h) {
     memset(ui, 0, sizeof(UIState));
@@ -86,7 +99,7 @@ void ui_resize(UIState *ui, int window_w, int window_h) {
 
     /* Compute menu positions */
     int mx = 8;
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         g_menus[i].x = mx;
         g_menus[i].w = font_text_width(g_menus[i].title, 1) + 12;
         mx += g_menus[i].w + 2;
@@ -94,7 +107,8 @@ void ui_resize(UIState *ui, int window_w, int window_h) {
 }
 
 void ui_notify(UIState *ui, const char *msg) {
-    strncpy(ui->modal_message, msg, sizeof(ui->modal_message) - 1);
+    if (!msg) msg = "";
+    snprintf(ui->modal_message, sizeof(ui->modal_message), "%s", msg);
     ui->modal_message_time = SDL_GetTicks();
 }
 
@@ -286,7 +300,7 @@ static void render_menubar(UIState *ui, SDL_Renderer *r) {
     SDL_RenderDrawLine(r, 0, MENUBAR_HEIGHT - 1, ui->screen_w, MENUBAR_HEIGHT - 1);
 
     SDL_Color tc = { 0, 0, 0, 255 };
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
         bool active = (ui->active_menu == i);
         if (active) {
             ui_draw_bevel_sunken(r, g_menus[i].x, 2, g_menus[i].w, MENUBAR_HEIGHT - 4);
@@ -297,7 +311,7 @@ static void render_menubar(UIState *ui, SDL_Renderer *r) {
 
 /* Render active dropdown menu */
 static void render_active_dropdown(UIState *ui, SDL_Renderer *r) {
-    if (ui->active_menu < 0 || ui->active_menu >= 5) return;
+    if (ui->active_menu < 0 || ui->active_menu >= 6) return;
 
     MenuDef *m = &g_menus[ui->active_menu];
     int menu_x = m->x;
@@ -318,14 +332,15 @@ static void render_active_dropdown(UIState *ui, SDL_Renderer *r) {
     for (int i = 0; i < m->item_count; i++) {
         int iy = menu_y + 2 + i * item_h;
         bool hovered = (mx >= menu_x + 2 && mx < menu_x + menu_w - 2 && my >= iy && my < iy + item_h);
+        const char *label = menu_item_label(ui, ui->active_menu, i);
 
         if (hovered) {
             SDL_SetRenderDrawColor(r, 0, 0, 128, 255); /* Classic Navy selection */
             SDL_Rect hr = { menu_x + 2, iy, menu_w - 4, item_h };
             SDL_RenderFillRect(r, &hr);
-            font_draw_text(r, m->items[i], menu_x + 10, iy + 7, (SDL_Color){ 255, 255, 255, 255 }, 1);
+            font_draw_text(r, label, menu_x + 10, iy + 7, (SDL_Color){ 255, 255, 255, 255 }, 1);
         } else {
-            font_draw_text(r, m->items[i], menu_x + 10, iy + 7, (SDL_Color){ 0, 0, 0, 255 }, 1);
+            font_draw_text(r, label, menu_x + 10, iy + 7, (SDL_Color){ 0, 0, 0, 255 }, 1);
         }
     }
 }
@@ -486,6 +501,29 @@ static void render_timeline(UIState *ui, CanvasProject *proj, SDL_Renderer *r) {
     ui_draw_button(r, ax + 300, ly, 60, 26, false, "+ Frame");
     ui_draw_button(r, ax + 365, ly, 50, 26, false, "Dup");
     ui_draw_button(r, ax + 420, ly, 50, 26, false, "Del");
+
+    /* Voiceover controls (right-aligned) */
+    if (ui->vo) {
+        Voiceover *vo = ui->vo;
+        int vx = ui->screen_w - 208;
+        ui_draw_button(r, vx, ly, 60, 26, vo->recording, vo->recording ? "STOP" : "REC");
+        ui_draw_button(r, vx + 65, ly, 62, 26, vo->playing, vo->playing ? "Stop" : "Play VO");
+
+        char vo_str[48];
+        if (vo->recording) {
+            snprintf(vo_str, sizeof(vo_str), "REC %.1fs", vo_duration_seconds(vo));
+        } else if (vo->loaded) {
+            snprintf(vo_str, sizeof(vo_str), "VO %.1fs%s", vo_duration_seconds(vo),
+                     vo->enabled ? "" : " (off)");
+        } else {
+            snprintf(vo_str, sizeof(vo_str), "VO none");
+        }
+        SDL_Color vc = { 0, 0, 0, 255 };
+        if (vo->recording) { vc.r = 190; vc.g = 0; vc.b = 0; }
+        else if (vo->loaded && !vo->enabled) { vc.r = 110; vc.g = 110; vc.b = 110; }
+        else if (vo->loaded) { vc.r = 0; vc.g = 110; vc.b = 0; }
+        font_draw_text(r, vo_str, vx + 133, ly + 9, vc, 1);
+    }
 
     /* Frame Reel Thumbnails Strip */
     int reel_x = PALETTE_X + 8;
@@ -690,10 +728,12 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
                     break;
                 }
                 case 3: { /* Export MP4 */
-                    ui_notify(ui, "Exporting animation to output.mp4...");
+                    const char *audio = ui->vo ? vo_export_path(ui->vo) : NULL;
+                    ui_notify(ui, audio ? "Exporting MP4 with voiceover..." : "Exporting animation to output.mp4...");
                     SDL_RenderPresent(r);
-                    bool ok = export_to_mp4(proj, "output.mp4", proj->fps);
-                    ui_notify(ui, ok ? "Exported output.mp4!" : export_get_last_error());
+                    bool ok = export_to_mp4_with_audio(proj, "output.mp4", proj->fps, audio);
+                    ui_notify(ui, ok ? (audio ? "Exported output.mp4 with voiceover!" : "Exported output.mp4!")
+                                     : export_get_last_error());
                     break;
                 }
                 case 4: { /* Export GIF */
@@ -777,7 +817,74 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
             }
             break;
 
-        case 4: /* Help */
+        case 4: /* Voiceover */
+            if (ui->vo) {
+                Voiceover *vo = ui->vo;
+                char err[VO_ERROR_LEN];
+                switch (item_idx) {
+                    case 0: /* Record / Stop */
+                        if (vo->recording) {
+                            vo_stop_recording(vo);
+                            if (vo->rec_error[0]) {
+                                ui_notify(ui, vo->rec_error);
+                            } else if (vo->loaded) {
+                                char msg[96];
+                                snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
+                                         vo_duration_seconds(vo), VO_DEFAULT_PATH);
+                                ui_notify(ui, msg);
+                            }
+                        } else {
+                            err[0] = '\0';
+                            if (vo_start_recording(vo, err, sizeof(err))) {
+                                ui_notify(ui, "Recording... choose Stop Recording when done");
+                            } else {
+                                ui_notify(ui, err);
+                            }
+                        }
+                        break;
+                    case 1: /* Import fixed-name WAV */
+                        err[0] = '\0';
+                        if (vo_load_wav(vo, VO_DEFAULT_PATH, err, sizeof(err))) {
+                            char msg[96];
+                            snprintf(msg, sizeof(msg), "Loaded %s (%.1fs)",
+                                     VO_DEFAULT_PATH, vo_duration_seconds(vo));
+                            ui_notify(ui, msg);
+                        } else {
+                            ui_notify(ui, err);
+                        }
+                        break;
+                    case 2: /* Preview / Stop */
+                        if (vo->playing) {
+                            vo_stop_playback(vo);
+                            ui_notify(ui, "Voiceover preview stopped");
+                        } else {
+                            err[0] = '\0';
+                            if (vo_play(vo, err, sizeof(err))) {
+                                ui_notify(ui, "Playing voiceover preview");
+                            } else {
+                                ui_notify(ui, err);
+                            }
+                        }
+                        break;
+                    case 3: /* Toggle inclusion in MP4 */
+                        if (!vo->loaded) {
+                            ui_notify(ui, "No voiceover loaded");
+                        } else {
+                            vo->enabled = !vo->enabled;
+                            ui_notify(ui, vo->enabled
+                                ? "Voiceover will be included in MP4 export"
+                                : "Voiceover will be muted in MP4 export");
+                        }
+                        break;
+                    case 4: /* Clear */
+                        vo_clear(vo);
+                        ui_notify(ui, "Voiceover cleared");
+                        break;
+                }
+            }
+            break;
+
+        case 5: /* Help */
             switch (item_idx) {
                 case 0:
                     ui_notify(ui, "Shortcuts: Space=Play, Tab=Layer, O=Onion, P=Pencil, B=Brush, E=Eraser, G=Bucket");
@@ -820,7 +927,7 @@ bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, 
     /* 2. Menu Bar Clicks */
     if (my < MENUBAR_HEIGHT) {
         /* Check menu titles: File, Edit, View, Animation, Help */
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 6; i++) {
             if (mx >= g_menus[i].x && mx < g_menus[i].x + g_menus[i].w) {
                 ui->active_menu = (ui->active_menu == i) ? -1 : i;
                 return true;
@@ -971,6 +1078,50 @@ bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, 
                 ui_notify(ui, "Cannot delete last frame");
             }
             return true;
+        }
+
+        /* Voiceover controls (right-aligned, mirrors render_timeline) */
+        if (ui->vo) {
+            Voiceover *vo = ui->vo;
+            int vx = ui->screen_w - 208;
+            char err[VO_ERROR_LEN];
+
+            if (mx >= vx && mx < vx + 60 && my >= ly && my < ly + 26) {
+                if (vo->recording) {
+                    vo_stop_recording(vo);
+                    if (vo->rec_error[0]) {
+                        ui_notify(ui, vo->rec_error);
+                    } else if (vo->loaded) {
+                        char msg[96];
+                        snprintf(msg, sizeof(msg), "Recorded voiceover (%.1fs) -> %s",
+                                 vo_duration_seconds(vo), VO_DEFAULT_PATH);
+                        ui_notify(ui, msg);
+                    }
+                } else {
+                    err[0] = '\0';
+                    if (vo_start_recording(vo, err, sizeof(err))) {
+                        ui_notify(ui, "Recording... click STOP when done");
+                    } else {
+                        ui_notify(ui, err);
+                    }
+                }
+                return true;
+            }
+
+            if (mx >= vx + 65 && mx < vx + 127 && my >= ly && my < ly + 26) {
+                if (vo->playing) {
+                    vo_stop_playback(vo);
+                    ui_notify(ui, "Voiceover preview stopped");
+                } else {
+                    err[0] = '\0';
+                    if (vo_play(vo, err, sizeof(err))) {
+                        ui_notify(ui, "Playing voiceover preview");
+                    } else {
+                        ui_notify(ui, err);
+                    }
+                }
+                return true;
+            }
         }
 
         /* Frame reel thumbnail clicks */

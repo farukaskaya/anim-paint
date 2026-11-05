@@ -129,9 +129,12 @@ static void composite_frame_to_buffer(CanvasProject *proj, int frame_idx, uint32
     }
 }
 
-/* Shared encode driver: run ffmpeg, stream every frame into it, report errors. */
+/* Shared encode driver: run ffmpeg, stream every frame into it, report errors.
+   When audio_path is non-NULL, that file is muxed as an AAC track trimmed to
+   the animation's duration. */
 static bool export_run(CanvasProject *proj, const char *filepath, int fps,
-                       const char *ffmpeg_args, const char *format_name) {
+                       const char *ffmpeg_args, const char *format_name,
+                       const char *audio_path) {
     export_clear_error();
 
     if (!proj || !filepath || proj->frame_count <= 0) {
@@ -155,10 +158,21 @@ static bool export_run(CanvasProject *proj, const char *filepath, int fps,
     char log_path[1024];
     export_log_path(filepath, log_path, sizeof(log_path));
 
-    char cmd[4096];
-    snprintf(cmd, sizeof(cmd),
-        "%s -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - %s \"%s\" 2> \"%s\"",
-        g_ffmpeg_path, w, h, fps, ffmpeg_args, filepath, log_path);
+    char cmd[8192];
+    if (audio_path && audio_path[0] != '\0') {
+        /* -t trims audio that runs past the end of the animation. */
+        double duration = (double)proj->frame_count / (double)fps;
+        snprintf(cmd, sizeof(cmd),
+            "%s -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - -i \"%s\" "
+            "-map 0:v:0 -map 1:a:0 %s "
+            "-c:a aac -b:a 192k -ar 44100 -t %.3f \"%s\" 2> \"%s\"",
+            g_ffmpeg_path, w, h, fps, audio_path, ffmpeg_args,
+            duration, filepath, log_path);
+    } else {
+        snprintf(cmd, sizeof(cmd),
+            "%s -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - %s \"%s\" 2> \"%s\"",
+            g_ffmpeg_path, w, h, fps, ffmpeg_args, filepath, log_path);
+    }
 
     FILE *pipe = FP_POPEN(cmd, "w");
     if (!pipe) {
@@ -194,17 +208,24 @@ static bool export_run(CanvasProject *proj, const char *filepath, int fps,
 bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps) {
     return export_run(proj, filepath, fps,
         "-c:v libx264 -pix_fmt yuv420p -movflags +faststart",
-        "MP4");
+        "MP4", NULL);
+}
+
+bool export_to_mp4_with_audio(CanvasProject *proj, const char *filepath, int fps,
+                              const char *audio_path) {
+    return export_run(proj, filepath, fps,
+        "-c:v libx264 -pix_fmt yuv420p -movflags +faststart",
+        "MP4", audio_path);
 }
 
 bool export_to_gif(CanvasProject *proj, const char *filepath, int fps) {
     return export_run(proj, filepath, fps,
         "-filter_complex \"[0:v] split [a][b];[a] palettegen=reserve_transparent=0 [p];[b][p] paletteuse\"",
-        "GIF");
+        "GIF", NULL);
 }
 
 bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fps) {
-    return export_run(proj, pattern_path, fps, "", "image sequence");
+    return export_run(proj, pattern_path, fps, "", "image sequence", NULL);
 }
 
 /* Save project format:
