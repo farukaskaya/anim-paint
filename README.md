@@ -139,13 +139,6 @@ Every `v*` git tag triggers the GitHub Actions release workflow, which publishes
 | Windows x86_64 | `AnimPaint-<version>-windows-x86_64.zip` (includes `SDL2.dll`) |
 | Windows x86_64 | `AnimPaint-<version>-windows-x86_64.exe` |
 
-To publish a release:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
 > **Note:** MP4 and GIF export shells out to `ffmpeg`. Install it with your package manager, or add `ffmpeg.exe` to `PATH` on Windows. The core painting/animation features work without it.
 
 ---
