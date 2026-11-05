@@ -34,7 +34,10 @@ fi
 
 TOOL="${APPIMAGETOOL:-}"
 if [ -z "$TOOL" ]; then
-    TOOL="$DIST/appimagetool-${ARCH}.AppImage"
+    # Keep the tool outside dist/ so it is never uploaded as a release asset.
+    CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/anim-paint"
+    mkdir -p "$CACHE_DIR"
+    TOOL="$CACHE_DIR/appimagetool-${ARCH}.AppImage"
     if [ ! -x "$TOOL" ]; then
         echo "Downloading appimagetool..."
         curl -fL -o "$TOOL" \

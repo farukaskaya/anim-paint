@@ -33,7 +33,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
-          path: dist/*.AppImage
+          path: dist/AnimPaint-*.AppImage
           if-no-files-found: error
 
   windows-exe:
@@ -89,7 +89,7 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/*.AppImage
-            dist/*.exe
-            dist/*.zip
+            dist/AnimPaint-*.AppImage
+            dist/AnimPaint-*.exe
+            dist/AnimPaint-*.zip
           fail_on_unmatched_files: false
