@@ -120,6 +120,14 @@ VERSION=1.0.0 packaging/build-windows.sh
 ```
 This produces a portable `.zip` and a bare `.exe` in `dist/`. FFmpeg must be installed and available on `PATH` for MP4/GIF export.
 
+### FFmpeg troubleshooting
+
+AnimPaint reports the specific failure reason in the status bar instead of a generic error.
+
+- **"FFmpeg not found"** — `ffmpeg.exe` is not on `PATH` for this process. Add its `bin` folder to the system/user `PATH`, then **restart AnimPaint** (an already-running app does not see new `PATH` entries).
+- **"FFmpeg failed (exit code N)"** — FFmpeg ran but rejected the encode. The full FFmpeg log is saved next to the output as `output.mp4.ffmpeg.log` / `output.gif.ffmpeg.log`.
+- **"Could not open ... for writing"** — the working folder is read-only (for example `Program Files`). Run AnimPaint from a writable folder such as `Documents`.
+
 ### Build a Linux AppImage
 ```bash
 sudo apt install libsdl2-dev make curl
@@ -140,6 +148,8 @@ Every `v*` git tag triggers the GitHub Actions release workflow, which publishes
 | Windows x86_64 | `AnimPaint-<version>-windows-x86_64.exe` |
 
 > **Note:** MP4 and GIF export shells out to `ffmpeg`. Install it with your package manager, or add `ffmpeg.exe` to `PATH` on Windows. The core painting/animation features work without it.
+>
+> **Windows note:** if you add FFmpeg to `PATH` while AnimPaint is already open, restart the app — running processes keep the environment they were started with. AnimPaint also probes `C:\ffmpeg\bin`, `C:\Program Files\ffmpeg\bin` and `C:\Program Files (x86)\ffmpeg\bin` automatically. On failure it now names the exact reason, and FFmpeg's own error output is written to `<output>.ffmpeg.log`.
 
 ---
 

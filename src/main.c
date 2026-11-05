@@ -161,8 +161,8 @@ int main(int argc, char *argv[]) {
                         canvas_redo(proj);
                         ui_notify(&ui, "Redo");
                     } else if (ctrl && e.key.keysym.sym == SDLK_s) {
-                        project_save(proj, "project.anp");
-                        ui_notify(&ui, "Saved project.anp!");
+                        bool ok = project_save(proj, "project.anp");
+                        ui_notify(&ui, ok ? "Saved project.anp!" : export_get_last_error());
                     } else if (ctrl && e.key.keysym.sym == SDLK_o) {
                         CanvasProject *loaded = project_load("project.anp");
                         if (loaded) {
@@ -170,7 +170,7 @@ int main(int argc, char *argv[]) {
                             proj = loaded;
                             ui_notify(&ui, "Loaded project.anp!");
                         } else {
-                            ui_notify(&ui, "Could not open project.anp");
+                            ui_notify(&ui, export_get_last_error());
                         }
                     } else if (ctrl && e.key.keysym.sym == SDLK_n) {
                         CanvasProject *fresh = canvas_create(proj->width, proj->height);
@@ -182,12 +182,12 @@ int main(int argc, char *argv[]) {
                         ui_notify(&ui, "Exporting to output.mp4...");
                         SDL_RenderPresent(renderer);
                         bool ok = export_to_mp4(proj, "output.mp4", proj->fps);
-                        ui_notify(&ui, ok ? "Exported output.mp4!" : "Export failed");
+                        ui_notify(&ui, ok ? "Exported output.mp4!" : export_get_last_error());
                     } else if (ctrl && e.key.keysym.sym == SDLK_g) {
                         ui_notify(&ui, "Exporting to output.gif...");
                         SDL_RenderPresent(renderer);
                         bool ok = export_to_gif(proj, "output.gif", proj->fps);
-                        ui_notify(&ui, ok ? "Exported output.gif!" : "Export failed");
+                        ui_notify(&ui, ok ? "Exported output.gif!" : export_get_last_error());
                     } else {
                         switch (e.key.keysym.sym) {
                             case SDLK_SPACE:

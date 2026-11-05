@@ -2,9 +2,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 
-/* ffmpeg is invoked through a shell pipe. Windows needs _popen and NUL. */
+/* ffmpeg is invoked through a shell pipe. Windows needs _popen/_pclose and NUL. */
 #ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#include <windows.h>
 #define ANP_POPEN  _popen
 #define ANP_PCLOSE _pclose
 #define ANP_NULL_DEVICE "NUL"
@@ -13,6 +17,78 @@
 #define ANP_PCLOSE pclose
 #define ANP_NULL_DEVICE "/dev/null"
 #endif
+
+/* Last export failure, shown in the status bar. */
+static char g_export_error[512] = "";
+static char g_ffmpeg_path[1024] = "";
+
+const char *export_get_last_error(void) {
+    return g_export_error;
+}
+
+static void export_set_error(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(g_export_error, sizeof(g_export_error), fmt, ap);
+    va_end(ap);
+}
+
+static void export_clear_error(void) {
+    g_export_error[0] = '\0';
+}
+
+/* Windows _popen defaults to text mode, which rewrites 0x0A as 0x0D 0x0A and
+   corrupts raw RGBA frame data. Always force the pipe into binary mode. */
+static void export_pipe_binary(FILE *pipe) {
+#ifdef _WIN32
+    _setmode(_fileno(pipe), _O_BINARY);
+#else
+    (void)pipe;
+#endif
+}
+
+/* Check that ffmpeg can be executed at all, so we can report "not found"
+   instead of a generic export failure. */
+static bool export_ffmpeg_available(void) {
+    if (g_ffmpeg_path[0] != '\0') return true;
+
+    FILE *probe = ANP_POPEN("ffmpeg -version", "r");
+    if (probe) {
+        export_pipe_binary(probe);
+        char buf[16];
+        size_t got = fread(buf, 1, sizeof(buf), probe);
+        int status = ANP_PCLOSE(probe);
+        if (got > 0 && status == 0) {
+            strncpy(g_ffmpeg_path, "ffmpeg", sizeof(g_ffmpeg_path) - 1);
+            return true;
+        }
+    }
+
+    /* Windows: PATH changes made while the app was open are not inherited by
+       already-running processes, so also try the usual install locations. */
+#ifdef _WIN32
+    static const char *candidates[] = {
+        "C:\\ffmpeg\\bin\\ffmpeg.exe",
+        "C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe",
+        "C:\\Program Files (x86)\\ffmpeg\\bin\\ffmpeg.exe",
+        NULL
+    };
+    for (int i = 0; candidates[i]; i++) {
+        if (GetFileAttributesA(candidates[i]) != INVALID_FILE_ATTRIBUTES) {
+            snprintf(g_ffmpeg_path, sizeof(g_ffmpeg_path), "\"%s\"", candidates[i]);
+            return true;
+        }
+    }
+#endif
+
+    export_set_error("FFmpeg not found. Install FFmpeg or add ffmpeg.exe to PATH, then restart AnimPaint.");
+    return false;
+}
+
+/* Build the stderr log path so failed exports leave a readable diagnostic. */
+static void export_log_path(const char *filepath, char *out, size_t out_size) {
+    snprintf(out, out_size, "%s.ffmpeg.log", filepath);
+}
 
 /* Helper to composite a single frame (Layer 0 + Layer 1) into an RGBA buffer */
 static void composite_frame_to_buffer(CanvasProject *proj, int frame_idx, uint32_t *out_buffer) {
@@ -53,112 +129,82 @@ static void composite_frame_to_buffer(CanvasProject *proj, int frame_idx, uint32
     }
 }
 
-bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps) {
-    if (!proj || !filepath || proj->frame_count <= 0) return false;
+/* Shared encode driver: run ffmpeg, stream every frame into it, report errors. */
+static bool export_run(CanvasProject *proj, const char *filepath, int fps,
+                       const char *ffmpeg_args, const char *format_name) {
+    export_clear_error();
+
+    if (!proj || !filepath || proj->frame_count <= 0) {
+        export_set_error("Nothing to export (no frames).");
+        return false;
+    }
     if (fps <= 0) fps = 12;
+
+    if (!export_ffmpeg_available()) return false;
 
     int w = proj->width;
     int h = proj->height;
     int total_pixels = w * h;
 
-    uint32_t *frame_buffer = (uint32_t *)malloc(total_pixels * sizeof(uint32_t));
-    if (!frame_buffer) return false;
+    uint32_t *frame_buffer = (uint32_t *)malloc((size_t)total_pixels * sizeof(uint32_t));
+    if (!frame_buffer) {
+        export_set_error("Out of memory while preparing %s export.", format_name);
+        return false;
+    }
 
-    char cmd[1024];
+    char log_path[1024];
+    export_log_path(filepath, log_path, sizeof(log_path));
+
+    char cmd[4096];
     snprintf(cmd, sizeof(cmd),
-        "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - "
-        "-c:v libx264 -pix_fmt yuv420p -movflags +faststart \"%s\" > %s 2>&1",
-        w, h, fps, filepath, ANP_NULL_DEVICE);
+        "%s -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - %s \"%s\" 2> \"%s\"",
+        g_ffmpeg_path, w, h, fps, ffmpeg_args, filepath, log_path);
 
     FILE *pipe = ANP_POPEN(cmd, "w");
     if (!pipe) {
         free(frame_buffer);
+        export_set_error("Could not start FFmpeg. Check that it is installed and on PATH.");
         return false;
     }
+    export_pipe_binary(pipe);
 
     for (int i = 0; i < proj->frame_count; i++) {
         composite_frame_to_buffer(proj, i, frame_buffer);
-        size_t written = fwrite(frame_buffer, sizeof(uint32_t), total_pixels, pipe);
+        size_t written = fwrite(frame_buffer, sizeof(uint32_t), (size_t)total_pixels, pipe);
         if (written < (size_t)total_pixels) {
             ANP_PCLOSE(pipe);
             free(frame_buffer);
+            export_set_error("Failed while writing frames to FFmpeg. See %s", log_path);
             return false;
         }
     }
 
     free(frame_buffer);
     int status = ANP_PCLOSE(pipe);
-    return (status == 0);
+
+    if (status != 0) {
+        export_set_error("FFmpeg failed (exit code %d). See %s", status, log_path);
+        return false;
+    }
+
+    remove(log_path);
+    return true;
+}
+
+bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps) {
+    return export_run(proj, filepath, fps,
+        "-c:v libx264 -pix_fmt yuv420p -movflags +faststart",
+        "MP4");
 }
 
 bool export_to_gif(CanvasProject *proj, const char *filepath, int fps) {
-    if (!proj || !filepath || proj->frame_count <= 0) return false;
-    if (fps <= 0) fps = 12;
-
-    int w = proj->width;
-    int h = proj->height;
-    int total_pixels = w * h;
-
-    uint32_t *frame_buffer = (uint32_t *)malloc(total_pixels * sizeof(uint32_t));
-    if (!frame_buffer) return false;
-
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - "
-        "-filter_complex \"[0:v] split [a][b];[a] palettegen=reserve_transparent=0 [p];[b][p] paletteuse\" \"%s\" > %s 2>&1",
-        w, h, fps, filepath, ANP_NULL_DEVICE);
-
-    FILE *pipe = ANP_POPEN(cmd, "w");
-    if (!pipe) {
-        free(frame_buffer);
-        return false;
-    }
-
-    for (int i = 0; i < proj->frame_count; i++) {
-        composite_frame_to_buffer(proj, i, frame_buffer);
-        size_t written = fwrite(frame_buffer, sizeof(uint32_t), total_pixels, pipe);
-        if (written < (size_t)total_pixels) {
-            ANP_PCLOSE(pipe);
-            free(frame_buffer);
-            return false;
-        }
-    }
-
-    free(frame_buffer);
-    int status = ANP_PCLOSE(pipe);
-    return (status == 0);
+    return export_run(proj, filepath, fps,
+        "-filter_complex \"[0:v] split [a][b];[a] palettegen=reserve_transparent=0 [p];[b][p] paletteuse\"",
+        "GIF");
 }
 
 bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fps) {
-    if (!proj || !pattern_path || proj->frame_count <= 0) return false;
-    if (fps <= 0) fps = 12;
-
-    int w = proj->width;
-    int h = proj->height;
-    int total_pixels = w * h;
-
-    uint32_t *frame_buffer = (uint32_t *)malloc(total_pixels * sizeof(uint32_t));
-    if (!frame_buffer) return false;
-
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - \"%s\" > %s 2>&1",
-        w, h, fps, pattern_path, ANP_NULL_DEVICE);
-
-    FILE *pipe = ANP_POPEN(cmd, "w");
-    if (!pipe) {
-        free(frame_buffer);
-        return false;
-    }
-
-    for (int i = 0; i < proj->frame_count; i++) {
-        composite_frame_to_buffer(proj, i, frame_buffer);
-        fwrite(frame_buffer, sizeof(uint32_t), total_pixels, pipe);
-    }
-
-    free(frame_buffer);
-    int status = ANP_PCLOSE(pipe);
-    return (status == 0);
+    return export_run(proj, pattern_path, fps, "", "image sequence");
 }
 
 /* Save project format:
@@ -172,9 +218,16 @@ bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fp
      Layer 1 pixels (width * height * 4)
 */
 bool project_save(CanvasProject *proj, const char *filepath) {
-    if (!proj || !filepath) return false;
+    export_clear_error();
+    if (!proj || !filepath) {
+        export_set_error("Invalid project or file path.");
+        return false;
+    }
     FILE *f = fopen(filepath, "wb");
-    if (!f) return false;
+    if (!f) {
+        export_set_error("Could not open %s for writing.", filepath);
+        return false;
+    }
 
     const char magic[4] = { 'A', 'N', 'P', '1' };
     fwrite(magic, 1, 4, f);
@@ -198,19 +251,28 @@ bool project_save(CanvasProject *proj, const char *filepath) {
 }
 
 CanvasProject *project_load(const char *filepath) {
-    if (!filepath) return NULL;
+    export_clear_error();
+    if (!filepath) {
+        export_set_error("No file path given.");
+        return NULL;
+    }
     FILE *f = fopen(filepath, "rb");
-    if (!f) return NULL;
+    if (!f) {
+        export_set_error("Could not open %s.", filepath);
+        return NULL;
+    }
 
     char magic[4];
     if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "ANP1", 4) != 0) {
         fclose(f);
+        export_set_error("%s is not a valid .anp project.", filepath);
         return NULL;
     }
 
     int32_t header[4];
     if (fread(header, sizeof(int32_t), 4, f) != 4) {
         fclose(f);
+        export_set_error("%s is truncated or corrupted.", filepath);
         return NULL;
     }
 
@@ -221,6 +283,7 @@ CanvasProject *project_load(const char *filepath) {
 
     if (w <= 0 || h <= 0 || frame_count <= 0) {
         fclose(f);
+        export_set_error("%s has invalid dimensions or frame count.", filepath);
         return NULL;
     }
 

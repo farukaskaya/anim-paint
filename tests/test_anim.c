@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 #include "../src/canvas.h"
 #include "../src/export.h"
@@ -120,7 +121,13 @@ int main() {
     printf("Testing export to GIF...\n");
     bool gif_ok = export_to_gif(proj, "test_output.gif", 12);
     assert(gif_ok);
+    assert(strlen(export_get_last_error()) == 0); /* success clears the error */
     printf("[PASS] Export to GIF (test_output.gif)\n");
+
+    /* 8. Error reporting */
+    assert(!project_save(proj, "/nonexistent-dir/x.anp"));
+    assert(strlen(export_get_last_error()) > 0);
+    printf("[PASS] Failure reasons are reported\n");
 
     /* Cleanup */
     canvas_destroy(proj);

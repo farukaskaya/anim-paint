@@ -13,8 +13,11 @@ bool export_to_gif(CanvasProject *proj, const char *filepath, int fps);
 /* Export individual frames as PNG / image sequence using ffmpeg */
 bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fps);
 
-/* Save and load native Anim Paint project file (.anp) */
+/* Save and load native AnimPaint project file (.anp) */
 bool project_save(CanvasProject *proj, const char *filepath);
 CanvasProject *project_load(const char *filepath);
+
+/* Human-readable reason for the most recent export/save/load failure. */
+const char *export_get_last_error(void);
 
 #endif /* EXPORT_H */

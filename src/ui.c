@@ -680,27 +680,27 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
                         *proj_ptr = loaded;
                         ui_notify(ui, "Loaded project.anp");
                     } else {
-                        ui_notify(ui, "Could not open project.anp");
+                        ui_notify(ui, export_get_last_error());
                     }
                     break;
                 }
                 case 2: { /* Save (.anp) */
                     bool ok = project_save(proj, "project.anp");
-                    ui_notify(ui, ok ? "Saved project.anp!" : "Failed to save project.anp");
+                    ui_notify(ui, ok ? "Saved project.anp!" : export_get_last_error());
                     break;
                 }
                 case 3: { /* Export MP4 */
                     ui_notify(ui, "Exporting animation to output.mp4...");
                     SDL_RenderPresent(r);
                     bool ok = export_to_mp4(proj, "output.mp4", proj->fps);
-                    ui_notify(ui, ok ? "Exported output.mp4!" : "Export failed (check ffmpeg)");
+                    ui_notify(ui, ok ? "Exported output.mp4!" : export_get_last_error());
                     break;
                 }
                 case 4: { /* Export GIF */
                     ui_notify(ui, "Exporting animation to output.gif...");
                     SDL_RenderPresent(r);
                     bool ok = export_to_gif(proj, "output.gif", proj->fps);
-                    ui_notify(ui, ok ? "Exported output.gif!" : "Export failed (check ffmpeg)");
+                    ui_notify(ui, ok ? "Exported output.gif!" : export_get_last_error());
                     break;
                 }
                 case 5: /* Exit */
