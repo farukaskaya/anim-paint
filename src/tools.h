@@ -89,6 +89,16 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
 void tool_on_mouse_move(ToolState *ts, CanvasProject *proj, int cx, int cy);
 void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int cy);
 
+/* Text tool management */
+void tool_handle_text_input(ToolState *ts, const char *text);
+void tool_handle_text_backspace(ToolState *ts);
+void tool_commit_text(ToolState *ts, CanvasProject *proj);
+void tool_cancel_text(ToolState *ts);
+
+/* Polygon tool management */
+void tool_commit_polygon(ToolState *ts, CanvasProject *proj);
+void tool_cancel_polygon(ToolState *ts);
+
 /* Render interactive previews (shapes, curve, text, selection box) */
 void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *renderer, int canvas_screen_x, int canvas_screen_y, float zoom);
 

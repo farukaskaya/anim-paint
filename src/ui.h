@@ -34,6 +34,11 @@ typedef struct {
     float zoom;
     int pan_x, pan_y;
 
+    /* Panning drag state */
+    bool is_panning;
+    int pan_drag_start_x, pan_drag_start_y;
+    int pan_start_pan_x, pan_start_pan_y;
+
     /* Dialog / Modal states */
     bool show_export_modal;
     bool show_new_modal;
@@ -41,7 +46,9 @@ typedef struct {
     uint32_t modal_message_time;
 
     /* Menu dropdown */
-    int active_menu; /* -1: none, 0: File, 1: Edit, 2: View, 3: Animation */
+    int active_menu;     /* -1: none, 0: File, 1: Edit, 2: View, 3: Animation, 4: Help */
+    int hovered_menu_item;
+    bool should_quit;
 
     /* Timeline scroll */
     int timeline_scroll_x;
@@ -59,7 +66,7 @@ void ui_draw_button(SDL_Renderer *r, int x, int y, int w, int h, bool pressed, c
 void ui_render(UIState *ui, CanvasProject *proj, ToolState *ts, SDL_Renderer *r);
 
 /* Event handling */
-bool ui_handle_mouse_down(UIState *ui, CanvasProject *proj, ToolState *ts, SDL_Renderer *r, int btn, int mx, int my);
+bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, SDL_Renderer *r, int btn, int mx, int my);
 bool ui_handle_mouse_up(UIState *ui, CanvasProject *proj, ToolState *ts, int btn, int mx, int my);
 bool ui_handle_mouse_move(UIState *ui, CanvasProject *proj, ToolState *ts, int mx, int my);
 bool ui_handle_mouse_wheel(UIState *ui, int dy);

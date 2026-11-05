@@ -7,7 +7,7 @@
 void tools_init(ToolState *ts) {
     memset(ts, 0, sizeof(ToolState));
     ts->active_tool = TOOL_PENCIL;
-    ts->primary_color = make_rgba(0, 0, 0, 255);       /* Black */
+    ts->primary_color = make_rgba(0, 0, 0, 255);         /* Black */
     ts->secondary_color = make_rgba(255, 255, 255, 255); /* White */
     ts->line_width = 1;
     ts->eraser_size = 8;
@@ -82,7 +82,7 @@ static void stamp_brush(CanvasProject *proj, int x, int y, int size, BrushShape 
     }
 }
 
-/* Bresenham line drawing with optional brush stamping */
+/* Bresenham line drawing */
 static void draw_line_bresenham(CanvasProject *proj, int x0, int y0, int x1, int y1, uint32_t color, int width, BrushShape shape, bool use_brush) {
     int dx = abs(x1 - x0);
     int dy = abs(y1 - y0);
@@ -115,7 +115,7 @@ static void draw_line_bresenham(CanvasProject *proj, int x0, int y0, int x1, int
     }
 }
 
-/* Eraser stamp */
+/* Eraser stamp: Left-click = erase to transparent (Anim) or secondary color (BG); Right-click = replace primary with secondary */
 static void apply_eraser(ToolState *ts, CanvasProject *proj, int x, int y, bool color_replace) {
     int half = ts->eraser_size / 2;
     int cur_f = proj->current_frame;
@@ -138,6 +138,29 @@ static void apply_eraser(ToolState *ts, CanvasProject *proj, int x, int y, bool 
             } else {
                 canvas_set_pixel(proj, cur_f, cur_l, px, py, erase_color);
             }
+        }
+    }
+}
+
+/* Interpolate eraser along a line */
+static void apply_eraser_line(ToolState *ts, CanvasProject *proj, int x0, int y0, int x1, int y1, bool color_replace) {
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+
+    while (1) {
+        apply_eraser(ts, proj, x0, y0, color_replace);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) {
+            err -= dy;
+            x0 += sx;
+        }
+        if (e2 < dx) {
+            err += dx;
+            y0 += sy;
         }
     }
 }
@@ -213,7 +236,7 @@ static void apply_airbrush(ToolState *ts, CanvasProject *proj, int x, int y, uin
     }
 }
 
-/* Shapes: Rectangle, Ellipse, Rounded Rect */
+/* Shapes: Rectangle */
 static void draw_rect(CanvasProject *proj, int x0, int y0, int x1, int y1, uint32_t stroke_col, uint32_t fill_col, ShapeFillMode mode, int stroke_w) {
     int min_x = (x0 < x1) ? x0 : x1;
     int max_x = (x0 > x1) ? x0 : x1;
@@ -246,6 +269,80 @@ static void draw_rect(CanvasProject *proj, int x0, int y0, int x1, int y1, uint3
     }
 }
 
+/* Distinctly Rounded Rectangle */
+static void draw_rounded_rect(CanvasProject *proj, int x0, int y0, int x1, int y1, uint32_t stroke_col, uint32_t fill_col, ShapeFillMode mode, int stroke_w) {
+    int min_x = (x0 < x1) ? x0 : x1;
+    int max_x = (x0 > x1) ? x0 : x1;
+    int min_y = (y0 < y1) ? y0 : y1;
+    int max_y = (y0 > y1) ? y0 : y1;
+    int w = max_x - min_x;
+    int h = max_y - min_y;
+    if (w <= 0 || h <= 0) return;
+
+    /* Distinctly rounded radius: ~25% of smaller edge, clamped to 8..32 px */
+    int r = (w < h ? w : h) / 4;
+    if (r < 8) r = (w < h ? w : h) / 2;
+    if (r > 32) r = 32;
+    if (r < 2) r = 2;
+
+    int cur_f = proj->current_frame;
+    int cur_l = proj->active_layer;
+
+    int r2 = r * r;
+    int inner_r = r - stroke_w;
+    if (inner_r < 0) inner_r = 0;
+    int inner_r2 = inner_r * inner_r;
+
+    uint32_t f_col = (mode == FILL_SOLID_ONLY) ? stroke_col : fill_col;
+
+    for (int y = min_y; y <= max_y; y++) {
+        for (int x = min_x; x <= max_x; x++) {
+            bool in_outer = false;
+            bool in_inner = false;
+
+            int dx = 0, dy = 0;
+            if (x < min_x + r && y < min_y + r) { /* Top-left corner */
+                dx = x - (min_x + r); dy = y - (min_y + r);
+            } else if (x > max_x - r && y < min_y + r) { /* Top-right corner */
+                dx = x - (max_x - r); dy = y - (min_y + r);
+            } else if (x < min_x + r && y > max_y - r) { /* Bottom-left corner */
+                dx = x - (min_x + r); dy = y - (max_y - r);
+            } else if (x > max_x - r && y > max_y - r) { /* Bottom-right corner */
+                dx = x - (max_x - r); dy = y - (max_y - r);
+            } else {
+                in_outer = true;
+                if (x >= min_x + stroke_w && x <= max_x - stroke_w &&
+                    y >= min_y + stroke_w && y <= max_y - stroke_w) {
+                    in_inner = true;
+                }
+            }
+
+            if (!in_outer) {
+                int dist2 = dx * dx + dy * dy;
+                if (dist2 <= r2) in_outer = true;
+                if (dist2 <= inner_r2) in_inner = true;
+            }
+
+            if (in_outer) {
+                if (mode == FILL_SOLID_ONLY) {
+                    canvas_set_pixel(proj, cur_f, cur_l, x, y, f_col);
+                } else if (mode == FILL_OUTLINE_AND_FILL) {
+                    if (in_inner) {
+                        canvas_set_pixel(proj, cur_f, cur_l, x, y, f_col);
+                    } else {
+                        canvas_set_pixel(proj, cur_f, cur_l, x, y, stroke_col);
+                    }
+                } else if (mode == FILL_OUTLINE_ONLY) {
+                    if (!in_inner) {
+                        canvas_set_pixel(proj, cur_f, cur_l, x, y, stroke_col);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* Ellipse */
 static void draw_ellipse(CanvasProject *proj, int x0, int y0, int x1, int y1, uint32_t stroke_col, uint32_t fill_col, ShapeFillMode mode, int stroke_w) {
     int min_x = (x0 < x1) ? x0 : x1;
     int max_x = (x0 > x1) ? x0 : x1;
@@ -292,6 +389,54 @@ static void draw_ellipse(CanvasProject *proj, int x0, int y0, int x1, int y1, ui
     }
 }
 
+/* Polygon Fill (Scanline algorithm) */
+static void fill_polygon(CanvasProject *proj, const int *px, const int *py, int n, uint32_t fill_col) {
+    if (n < 3) return;
+    int min_y = py[0], max_y = py[0];
+    for (int i = 1; i < n; i++) {
+        if (py[i] < min_y) min_y = py[i];
+        if (py[i] > max_y) max_y = py[i];
+    }
+    if (min_y < 0) min_y = 0;
+    if (max_y >= proj->height) max_y = proj->height - 1;
+
+    int cur_f = proj->current_frame;
+    int cur_l = proj->active_layer;
+    int node_x[128];
+
+    for (int y = min_y; y <= max_y; y++) {
+        int nodes = 0;
+        int j = n - 1;
+        for (int i = 0; i < n; i++) {
+            if ((py[i] < y && py[j] >= y) || (py[j] < y && py[i] >= y)) {
+                if (nodes < 128) {
+                    node_x[nodes++] = px[i] + (y - py[i]) * (px[j] - px[i]) / (py[j] - py[i]);
+                }
+            }
+            j = i;
+        }
+        for (int i = 0; i < nodes - 1; i++) {
+            for (int k = i + 1; k < nodes; k++) {
+                if (node_x[i] > node_x[k]) {
+                    int tmp = node_x[i];
+                    node_x[i] = node_x[k];
+                    node_x[k] = tmp;
+                }
+            }
+        }
+        for (int i = 0; i < nodes; i += 2) {
+            if (i + 1 >= nodes) break;
+            int x_start = node_x[i];
+            int x_end = node_x[i + 1];
+            if (x_start < 0) x_start = 0;
+            if (x_end >= proj->width) x_end = proj->width - 1;
+            for (int x = x_start; x <= x_end; x++) {
+                canvas_set_pixel(proj, cur_f, cur_l, x, y, fill_col);
+            }
+        }
+    }
+}
+
 /* Cubic Bezier curve drawer */
 static void draw_bezier_curve(CanvasProject *proj, int p0x, int p0y, int p1x, int p1y, int p2x, int p2y, int p3x, int p3y, uint32_t color, int width) {
     int prev_x = p0x, prev_y = p0y;
@@ -313,9 +458,124 @@ static void draw_bezier_curve(CanvasProject *proj, int p0x, int p0y, int p1x, in
     }
 }
 
+/* Stamp text onto canvas directly */
+static void draw_text_to_canvas(CanvasProject *proj, const char *text, int x, int y, uint32_t color, int scale) {
+    if (!text || scale <= 0) return;
+    int cur_f = proj->current_frame;
+    int cur_l = proj->active_layer;
+    int cur_x = x;
+    int cur_y = y;
+    int len = (int)strlen(text);
+
+    for (int i = 0; i < len; i++) {
+        char c = text[i];
+        if (c == '\n') {
+            cur_x = x;
+            cur_y += 9 * scale;
+            continue;
+        }
+        if ((unsigned char)c < 32 || (unsigned char)c > 127) c = '?';
+        const uint8_t *bitmap = font8x8_basic[(unsigned char)c - 32];
+        for (int row = 0; row < 8; row++) {
+            uint8_t byte = bitmap[row];
+            for (int col = 0; col < 8; col++) {
+                if (byte & (0x80 >> col)) {
+                    for (int dy = 0; dy < scale; dy++) {
+                        for (int dx = 0; dx < scale; dx++) {
+                            canvas_set_pixel(proj, cur_f, cur_l, cur_x + col * scale + dx, cur_y + row * scale + dy, color);
+                        }
+                    }
+                }
+            }
+        }
+        cur_x += 8 * scale;
+    }
+}
+
+/* Text tool management */
+void tool_handle_text_input(ToolState *ts, const char *text) {
+    if (!ts->text_active || !text) return;
+    int cur_len = (int)strlen(ts->text_buffer);
+    int add_len = (int)strlen(text);
+    if (cur_len + add_len < (int)sizeof(ts->text_buffer) - 1) {
+        strcat(ts->text_buffer, text);
+    }
+}
+
+void tool_handle_text_backspace(ToolState *ts) {
+    if (!ts->text_active) return;
+    int len = (int)strlen(ts->text_buffer);
+    if (len > 0) {
+        ts->text_buffer[len - 1] = '\0';
+    }
+}
+
+void tool_commit_text(ToolState *ts, CanvasProject *proj) {
+    if (!ts->text_active) return;
+    if (strlen(ts->text_buffer) > 0) {
+        canvas_push_undo(proj);
+        draw_text_to_canvas(proj, ts->text_buffer, ts->text_x, ts->text_y, ts->primary_color, 1);
+        proj->canvas_dirty = true;
+    }
+    ts->text_active = false;
+    ts->text_buffer[0] = '\0';
+    SDL_StopTextInput();
+}
+
+void tool_cancel_text(ToolState *ts) {
+    ts->text_active = false;
+    ts->text_buffer[0] = '\0';
+    SDL_StopTextInput();
+}
+
+/* Polygon tool management */
+void tool_commit_polygon(ToolState *ts, CanvasProject *proj) {
+    if (!ts->poly_active || ts->poly_point_count < 2) {
+        ts->poly_active = false;
+        ts->poly_point_count = 0;
+        return;
+    }
+
+    uint32_t stroke_col = ts->primary_color;
+    uint32_t fill_col = ts->secondary_color;
+
+    if (ts->shape_fill == FILL_OUTLINE_AND_FILL || ts->shape_fill == FILL_SOLID_ONLY) {
+        uint32_t f_col = (ts->shape_fill == FILL_SOLID_ONLY) ? stroke_col : fill_col;
+        fill_polygon(proj, ts->poly_points_x, ts->poly_points_y, ts->poly_point_count, f_col);
+    }
+
+    if (ts->shape_fill == FILL_OUTLINE_ONLY || ts->shape_fill == FILL_OUTLINE_AND_FILL) {
+        for (int i = 0; i < ts->poly_point_count; i++) {
+            int next_i = (i + 1) % ts->poly_point_count;
+            draw_line_bresenham(proj, ts->poly_points_x[i], ts->poly_points_y[i],
+                                ts->poly_points_x[next_i], ts->poly_points_y[next_i],
+                                stroke_col, ts->line_width, BRUSH_CIRCLE, false);
+        }
+    }
+
+    ts->poly_active = false;
+    ts->poly_point_count = 0;
+    proj->canvas_dirty = true;
+}
+
+void tool_cancel_polygon(ToolState *ts) {
+    ts->poly_active = false;
+    ts->poly_point_count = 0;
+}
+
 /* Mouse Event Handlers */
 void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int cy) {
     if (cx < 0 || cx >= proj->width || cy < 0 || cy >= proj->height) return;
+
+    /* If text is active and user clicked outside, commit previous text */
+    if (ts->text_active && ts->active_tool != TOOL_TEXT) {
+        tool_commit_text(ts, proj);
+    }
+
+    /* If polygon active and tool switched, commit polygon */
+    if (ts->poly_active && ts->active_tool != TOOL_POLYGON) {
+        tool_commit_polygon(ts, proj);
+    }
 
     ts->is_drawing = true;
     ts->mouse_button = btn;
@@ -329,7 +589,8 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
     uint32_t draw_color = (btn == SDL_BUTTON_RIGHT) ? ts->secondary_color : ts->primary_color;
 
     /* Push undo snapshot before stroke starts */
-    if (ts->active_tool != TOOL_EYEDROPPER && ts->active_tool != TOOL_MAGNIFIER && ts->active_tool != TOOL_SELECT) {
+    if (ts->active_tool != TOOL_EYEDROPPER && ts->active_tool != TOOL_MAGNIFIER &&
+        ts->active_tool != TOOL_SELECT && ts->active_tool != TOOL_TEXT && ts->active_tool != TOOL_POLYGON) {
         if (ts->active_tool != TOOL_CURVE || ts->curve_step == 0) {
             canvas_push_undo(proj);
         }
@@ -346,13 +607,13 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
             apply_eraser(ts, proj, cx, cy, btn == SDL_BUTTON_RIGHT);
             break;
         case TOOL_BUCKET:
+            canvas_push_undo(proj);
             flood_fill(proj, cx, cy, draw_color);
             ts->is_drawing = false;
             break;
         case TOOL_EYEDROPPER: {
             uint32_t picked = canvas_get_pixel(proj, proj->current_frame, proj->active_layer, cx, cy);
             if ((picked & 0xFF000000) == 0 && proj->active_layer == LAYER_ANIM) {
-                /* If transparent in anim, pick background pixel */
                 picked = canvas_get_pixel(proj, proj->current_frame, LAYER_BG, cx, cy);
             }
             if (btn == SDL_BUTTON_RIGHT) ts->secondary_color = picked;
@@ -364,22 +625,44 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
             apply_airbrush(ts, proj, cx, cy, draw_color);
             break;
         case TOOL_TEXT:
+            if (ts->text_active) {
+                tool_commit_text(ts, proj);
+            }
             ts->text_active = true;
             ts->text_x = cx;
             ts->text_y = cy;
             ts->text_cursor = 0;
             ts->text_buffer[0] = '\0';
+            SDL_StartTextInput();
+            ts->is_drawing = false;
+            break;
+        case TOOL_POLYGON:
+            if (!ts->poly_active) {
+                canvas_push_undo(proj);
+                ts->poly_active = true;
+                ts->poly_point_count = 0;
+                ts->poly_points_x[ts->poly_point_count] = cx;
+                ts->poly_points_y[ts->poly_point_count] = cy;
+                ts->poly_point_count++;
+            } else {
+                int dx = abs(cx - ts->poly_points_x[0]);
+                int dy = abs(cy - ts->poly_points_y[0]);
+                if (btn == SDL_BUTTON_RIGHT || (dx <= 8 && dy <= 8 && ts->poly_point_count >= 3)) {
+                    tool_commit_polygon(ts, proj);
+                } else if (ts->poly_point_count < 63) {
+                    ts->poly_points_x[ts->poly_point_count] = cx;
+                    ts->poly_points_y[ts->poly_point_count] = cy;
+                    ts->poly_point_count++;
+                }
+            }
             ts->is_drawing = false;
             break;
         case TOOL_SELECT:
-            /* If clicking inside existing selection, start moving it */
             if (proj->has_selection && cx >= proj->sel_x && cx < proj->sel_x + proj->sel_w &&
                 cy >= proj->sel_y && cy < proj->sel_y + proj->sel_h) {
                 proj->selection_floating = true;
             } else {
-                /* Start new selection marquee */
                 if (proj->has_selection && proj->selection_floating) {
-                    /* Commit previous selection */
                     proj->selection_floating = false;
                     proj->has_selection = false;
                 }
@@ -408,7 +691,11 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
 }
 
 void tool_on_mouse_move(ToolState *ts, CanvasProject *proj, int cx, int cy) {
-    if (!ts->is_drawing) return;
+    if (!ts->is_drawing) {
+        ts->curr_x = cx;
+        ts->curr_y = cy;
+        return;
+    }
 
     ts->curr_x = cx;
     ts->curr_y = cy;
@@ -422,22 +709,19 @@ void tool_on_mouse_move(ToolState *ts, CanvasProject *proj, int cx, int cy) {
             draw_line_bresenham(proj, ts->prev_x, ts->prev_y, cx, cy, draw_color, ts->brush_size, ts->brush_shape, true);
             break;
         case TOOL_ERASER:
-            draw_line_bresenham(proj, ts->prev_x, ts->prev_y, cx, cy, draw_color, ts->eraser_size, BRUSH_SQUARE, false);
-            apply_eraser(ts, proj, cx, cy, ts->mouse_button == SDL_BUTTON_RIGHT);
+            apply_eraser_line(ts, proj, ts->prev_x, ts->prev_y, cx, cy, ts->mouse_button == SDL_BUTTON_RIGHT);
             break;
         case TOOL_AIRBRUSH:
             apply_airbrush(ts, proj, cx, cy, draw_color);
             break;
         case TOOL_SELECT:
             if (proj->has_selection && proj->selection_floating) {
-                /* Move floating selection */
                 int dx = cx - ts->prev_x;
                 int dy = cy - ts->prev_y;
                 proj->sel_x += dx;
                 proj->sel_y += dy;
                 proj->canvas_dirty = true;
             } else {
-                /* Dragging selection box */
                 proj->sel_x = (ts->start_x < cx) ? ts->start_x : cx;
                 proj->sel_y = (ts->start_y < cy) ? ts->start_y : cy;
                 proj->sel_w = abs(cx - ts->start_x);
@@ -482,7 +766,7 @@ void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int c
             draw_rect(proj, ts->start_x, ts->start_y, cx, cy, draw_color, fill_color, ts->shape_fill, ts->line_width);
             break;
         case TOOL_ROUNDED_RECT:
-            draw_rect(proj, ts->start_x, ts->start_y, cx, cy, draw_color, fill_color, ts->shape_fill, ts->line_width);
+            draw_rounded_rect(proj, ts->start_x, ts->start_y, cx, cy, draw_color, fill_color, ts->shape_fill, ts->line_width);
             break;
         case TOOL_ELLIPSE:
             draw_ellipse(proj, ts->start_x, ts->start_y, cx, cy, draw_color, fill_color, ts->shape_fill, ts->line_width);
@@ -490,7 +774,6 @@ void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int c
         case TOOL_SELECT:
             if (!proj->has_selection && proj->sel_w > 1 && proj->sel_h > 1) {
                 proj->has_selection = true;
-                /* Lift selection pixels from active layer */
                 if (proj->selection_pixels) free(proj->selection_pixels);
                 proj->selection_pixels = (uint32_t *)malloc(proj->sel_w * proj->sel_h * sizeof(uint32_t));
                 for (int sy = 0; sy < proj->sel_h; sy++) {
@@ -506,7 +789,6 @@ void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int c
             } else if (ts->curve_step == 1) {
                 ts->curve_step = 2;
             } else if (ts->curve_step == 2) {
-                /* Commit curve to canvas */
                 draw_bezier_curve(proj, ts->curve_p0_x, ts->curve_p0_y, ts->curve_p1_x, ts->curve_p1_y,
                                   ts->curve_p2_x, ts->curve_p2_y, ts->curve_p3_x, ts->curve_p3_y,
                                   draw_color, ts->line_width);
@@ -518,10 +800,8 @@ void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int c
     }
 }
 
-/* Render on-screen previews (like rubber-banding line or rectangle while dragging) */
+/* Render on-screen previews */
 void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *renderer, int canvas_screen_x, int canvas_screen_y, float zoom) {
-    if (!ts->is_drawing && ts->active_tool != TOOL_CURVE && !proj->has_selection) return;
-
     if (ts->is_drawing) {
         int x0 = canvas_screen_x + (int)(ts->start_x * zoom);
         int y0 = canvas_screen_y + (int)(ts->start_y * zoom);
@@ -532,13 +812,32 @@ void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *rende
 
         if (ts->active_tool == TOOL_LINE) {
             SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
-        } else if (ts->active_tool == TOOL_RECTANGLE || ts->active_tool == TOOL_ROUNDED_RECT) {
+        } else if (ts->active_tool == TOOL_RECTANGLE) {
             int rx = (x0 < x1) ? x0 : x1;
             int ry = (y0 < y1) ? y0 : y1;
             int rw = abs(x1 - x0);
             int rh = abs(y1 - y0);
             SDL_Rect r = { rx, ry, rw, rh };
             SDL_RenderDrawRect(renderer, &r);
+        } else if (ts->active_tool == TOOL_ROUNDED_RECT) {
+            int rx = (x0 < x1) ? x0 : x1;
+            int ry = (y0 < y1) ? y0 : y1;
+            int rw = abs(x1 - x0);
+            int rh = abs(y1 - y0);
+            int r_corner = (rw < rh ? rw : rh) / 4;
+            if (r_corner < 4) r_corner = 4;
+            if (r_corner > 24) r_corner = 24;
+
+            /* Outline preview with corner ticks */
+            SDL_RenderDrawLine(renderer, rx + r_corner, ry, rx + rw - r_corner, ry);
+            SDL_RenderDrawLine(renderer, rx + r_corner, ry + rh, rx + rw - r_corner, ry + rh);
+            SDL_RenderDrawLine(renderer, rx, ry + r_corner, rx, ry + rh - r_corner);
+            SDL_RenderDrawLine(renderer, rx + rw, ry + r_corner, rx + rw, ry + rh - r_corner);
+            /* Corner diagonals */
+            SDL_RenderDrawLine(renderer, rx, ry + r_corner, rx + r_corner, ry);
+            SDL_RenderDrawLine(renderer, rx + rw - r_corner, ry, rx + rw, ry + r_corner);
+            SDL_RenderDrawLine(renderer, rx, ry + rh - r_corner, rx + r_corner, ry + rh);
+            SDL_RenderDrawLine(renderer, rx + rw - r_corner, ry + rh, rx + rw, ry + rh - r_corner);
         } else if (ts->active_tool == TOOL_ELLIPSE) {
             int rx = (x0 < x1) ? x0 : x1;
             int ry = (y0 < y1) ? y0 : y1;
@@ -546,6 +845,54 @@ void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *rende
             int rh = abs(y1 - y0);
             SDL_Rect r = { rx, ry, rw, rh };
             SDL_RenderDrawRect(renderer, &r);
+        }
+    }
+
+    /* Polygon interactive preview */
+    if (ts->active_tool == TOOL_POLYGON && ts->poly_active && ts->poly_point_count > 0) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 180, 255);
+        for (int i = 0; i < ts->poly_point_count - 1; i++) {
+            int px0 = canvas_screen_x + (int)(ts->poly_points_x[i] * zoom);
+            int py0 = canvas_screen_y + (int)(ts->poly_points_y[i] * zoom);
+            int px1 = canvas_screen_x + (int)(ts->poly_points_x[i+1] * zoom);
+            int py1 = canvas_screen_y + (int)(ts->poly_points_y[i+1] * zoom);
+            SDL_RenderDrawLine(renderer, px0, py0, px1, py1);
+        }
+        int last_x = canvas_screen_x + (int)(ts->poly_points_x[ts->poly_point_count - 1] * zoom);
+        int last_y = canvas_screen_y + (int)(ts->poly_points_y[ts->poly_point_count - 1] * zoom);
+        int cur_x = canvas_screen_x + (int)(ts->curr_x * zoom);
+        int cur_y = canvas_screen_y + (int)(ts->curr_y * zoom);
+        SDL_RenderDrawLine(renderer, last_x, last_y, cur_x, cur_y);
+
+        /* Starting point box (click here to close) */
+        int start_x = canvas_screen_x + (int)(ts->poly_points_x[0] * zoom);
+        int start_y = canvas_screen_y + (int)(ts->poly_points_y[0] * zoom);
+        SDL_Rect sbox = { start_x - 3, start_y - 3, 7, 7 };
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+        SDL_RenderDrawRect(renderer, &sbox);
+    }
+
+    /* Text interactive preview */
+    if (ts->text_active) {
+        int tx = canvas_screen_x + (int)(ts->text_x * zoom);
+        int ty = canvas_screen_y + (int)(ts->text_y * zoom);
+        int scale = (int)zoom > 0 ? (int)zoom : 1;
+        int text_w = font_text_width(ts->text_buffer, scale);
+        if (text_w < 40) text_w = 40;
+        int text_h = 10 * scale;
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 180, 255);
+        SDL_Rect tr = { tx - 2, ty - 2, text_w + 8, text_h + 4 };
+        SDL_RenderDrawRect(renderer, &tr);
+
+        uint8_t pr, pg, pb, pa;
+        unpack_rgba(ts->primary_color, &pr, &pg, &pb, &pa);
+        font_draw_text(renderer, ts->text_buffer, tx, ty, (SDL_Color){ pr, pg, pb, 255 }, scale);
+
+        /* Blinking text cursor */
+        if ((SDL_GetTicks() / 400) % 2 == 0) {
+            int cur_x = tx + font_text_width(ts->text_buffer, scale);
+            SDL_RenderDrawLine(renderer, cur_x + 1, ty, cur_x + 1, ty + text_h);
         }
     }
 

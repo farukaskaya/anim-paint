@@ -53,7 +53,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Initialize Project, Tools, and UI */
     CanvasProject *proj = canvas_create(DEFAULT_CANVAS_W, DEFAULT_CANVAS_H);
     ToolState ts;
     tools_init(&ts);
@@ -61,13 +60,16 @@ int main(int argc, char *argv[]) {
     UIState ui;
     ui_init(&ui, DEFAULT_WINDOW_W, DEFAULT_WINDOW_H);
 
-    /* Animation playback timing */
     Uint32 last_frame_time = SDL_GetTicks();
-
     bool running = true;
     SDL_Event e;
 
     while (running) {
+        if (ui.should_quit) {
+            running = false;
+            break;
+        }
+
         Uint32 now = SDL_GetTicks();
         Uint32 delta_ms = now - last_frame_time;
         last_frame_time = now;
@@ -103,8 +105,14 @@ int main(int argc, char *argv[]) {
                     }
                     break;
 
+                case SDL_TEXTINPUT:
+                    if (ts.text_active) {
+                        tool_handle_text_input(&ts, e.text.text);
+                    }
+                    break;
+
                 case SDL_MOUSEBUTTONDOWN:
-                    ui_handle_mouse_down(&ui, proj, &ts, renderer, e.button.button, e.button.x, e.button.y);
+                    ui_handle_mouse_down(&ui, &proj, &ts, renderer, e.button.button, e.button.x, e.button.y);
                     break;
 
                 case SDL_MOUSEBUTTONUP:
@@ -120,6 +128,29 @@ int main(int argc, char *argv[]) {
                     break;
 
                 case SDL_KEYDOWN: {
+                    /* If typing text in Text tool */
+                    if (ts.text_active) {
+                        if (e.key.keysym.sym == SDLK_BACKSPACE) {
+                            tool_handle_text_backspace(&ts);
+                        } else if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
+                            tool_commit_text(&ts, proj);
+                        } else if (e.key.keysym.sym == SDLK_ESCAPE) {
+                            tool_cancel_text(&ts);
+                        }
+                        break;
+                    }
+
+                    /* If active polygon drawing */
+                    if (ts.poly_active) {
+                        if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
+                            tool_commit_polygon(&ts, proj);
+                            break;
+                        } else if (e.key.keysym.sym == SDLK_ESCAPE) {
+                            tool_cancel_polygon(&ts);
+                            break;
+                        }
+                    }
+
                     SDL_Keymod mod = SDL_GetModState();
                     bool ctrl = (mod & KMOD_CTRL);
 
@@ -141,6 +172,12 @@ int main(int argc, char *argv[]) {
                         } else {
                             ui_notify(&ui, "Could not open project.anp");
                         }
+                    } else if (ctrl && e.key.keysym.sym == SDLK_n) {
+                        CanvasProject *fresh = canvas_create(proj->width, proj->height);
+                        canvas_destroy(proj);
+                        proj = fresh;
+                        ui.pan_x = 0; ui.pan_y = 0;
+                        ui_notify(&ui, "New Animation");
                     } else if (ctrl && e.key.keysym.sym == SDLK_e) {
                         ui_notify(&ui, "Exporting to output.mp4...");
                         SDL_RenderPresent(renderer);
@@ -182,7 +219,9 @@ int main(int argc, char *argv[]) {
                             case SDLK_c: ts.active_tool = TOOL_ELLIPSE; break;
                             case SDLK_s: ts.active_tool = TOOL_SELECT; break;
                             case SDLK_ESCAPE:
-                                if (proj->has_selection) {
+                                if (ui.active_menu >= 0) {
+                                    ui.active_menu = -1;
+                                } else if (proj->has_selection) {
                                     proj->has_selection = false;
                                     proj->selection_floating = false;
                                     proj->canvas_dirty = true;
@@ -197,15 +236,12 @@ int main(int argc, char *argv[]) {
             }
         }
 
-        /* Render */
         ui_render(&ui, proj, &ts, renderer);
         SDL_RenderPresent(renderer);
 
-        /* Cap frame rate for UI smoothness without cooking CPU */
         SDL_Delay(16);
     }
 
-    /* Cleanup */
     canvas_destroy(proj);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
