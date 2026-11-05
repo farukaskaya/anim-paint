@@ -1,0 +1,6 @@
+build/
+animpaint
+tests/test_anim
+output.mp4
+output.gif
+*.anp
