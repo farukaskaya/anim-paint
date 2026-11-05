@@ -9,7 +9,7 @@
 ## ✨ Key Features
 
 ### 🖌️ Classic MS Paint Toolset (Zero Tool Bloat)
-1. **Free-Form Select (Lasso)**
+1. **Free-Form Select (Lasso)** — draw any outline, then cut, drag and drop the selected pixels.
 2. **Rectangular Select** (with transparent selection and move/drag)
 3. **Eraser / Color Eraser** (Left click = erase; Right click = replace primary with secondary color)
 4. **Fill With Color** (Fast scanline flood fill)
@@ -46,6 +46,7 @@
 - **One-Click MP4:** Directly encodes high-compatibility H.264 video (`output.mp4`) ready for web, Discord, YouTube, or social media.
 - **High-Quality GIF:** Two-pass palette generation (`output.gif`) with zero color banding.
 - **Native Project Save/Load:** Lightweight `.anp` binary files to preserve your frames and layers.
+- Export and save live in the **File** menu (the duplicate top-right shortcut buttons have been removed to keep the canvas clean).
 
 ---
 
@@ -61,6 +62,7 @@
 | `Ctrl + Y` | Redo |
 | `Ctrl + S` | Save Project (`project.anp`) |
 | `Ctrl + O` | Load Project (`project.anp`) |
+| `Ctrl + N` | New Animation |
 | `Ctrl + E` | Export MP4 (`output.mp4`) |
 | `Ctrl + G` | Export GIF (`output.gif`) |
 | `P` | Select **Pencil** Tool |
@@ -71,21 +73,28 @@
 | `L` | Select **Line** Tool |
 | `R` | Select **Rectangle** Tool |
 | `C` | Select **Ellipse** Tool |
-| `S` | Select **Selection** Tool |
-| `Esc` | Deselect active marquee |
+| `S` | Select **Rectangular Selection** Tool |
+| `F` | Select **Free-Form (Lasso) Selection** Tool |
+| `Esc` | Deselect active marquee / cancel lasso |
 | `Mouse Wheel` | Zoom in / Zoom out |
+
+### Using Free-Form Select
+1. Pick the lasso tool (`F`) and drag an outline around the artwork.
+2. Release to close the shape — only pixels **inside** the lasso are selected.
+3. Click inside the selection and drag to move it. The source area is cut away automatically.
+4. Click outside the selection or press `Esc` to deselect. `Ctrl + Z` undoes a move.
 
 ---
 
 ## 🛠️ Building & Running
 
 ### Requirements
-- Linux (x86_64, ARM)
+- Linux (x86_64, ARM) or Windows (x86_64 via MinGW/MSYS2)
 - GCC or Clang
-- SDL2 (`libsdl2-dev`)
-- FFmpeg (for video & GIF export)
+- SDL2 (`libsdl2-dev` on Debian/Ubuntu, `mingw-w64-x86_64-SDL2` on MSYS2)
+- FFmpeg (required at runtime for video & GIF export)
 
-### Compile
+### Compile (Linux / macOS)
 ```bash
 make
 ```
@@ -99,20 +108,79 @@ or simply:
 make run
 ```
 
+### Run the test suite
+```bash
+make test
+```
+
+### Compile on Windows (MSYS2 MinGW64)
+```bash
+pacman -S --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-SDL2 make zip
+VERSION=1.0.0 packaging/build-windows.sh
+```
+This produces a portable `.zip` and a bare `.exe` in `dist/`. FFmpeg must be installed and available on `PATH` for MP4/GIF export.
+
+### Build a Linux AppImage
+```bash
+sudo apt install libsdl2-dev make curl
+VERSION=1.0.0 packaging/build-appimage.sh
+```
+The AppImage is written to `dist/AnimPaint-<version>-x86_64.AppImage`.
+
+---
+
+## 📦 Downloads & Releases
+
+Every `v*` git tag triggers the GitHub Actions release workflow, which publishes:
+
+| Platform | Artifact |
+| :--- | :--- |
+| Linux x86_64 | `AnimPaint-<version>-x86_64.AppImage` |
+| Windows x86_64 | `AnimPaint-<version>-windows-x86_64.zip` (includes `SDL2.dll`) |
+| Windows x86_64 | `AnimPaint-<version>-windows-x86_64.exe` |
+
+To publish a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+> **Note:** MP4 and GIF export shells out to `ffmpeg`. Install it with your package manager, or add `ffmpeg.exe` to `PATH` on Windows. The core painting/animation features work without it.
+
 ---
 
 ## 📁 Project Architecture
 ```
 anim-paint/
-├── Makefile          # Clean compilation build script
-├── README.md         # Documentation & guide
+├── Makefile                      # Clean compilation build script
+├── README.md                     # Documentation & guide
+├── LICENSE                       # GNU GPL v3.0
+├── assets/
+│   ├── animpaint.svg             # Vector app icon
+│   └── animpaint.png             # 256x256 icon used by the AppImage
+├── packaging/
+│   ├── AppRun                    # AppImage launcher
+│   ├── animpaint.desktop         # Linux desktop entry
+│   ├── build-appimage.sh         # Linux AppImage builder
+│   └── build-windows.sh          # Portable Windows builder (MSYS2)
+├── .github/workflows/
+│   └── release.yml               # CI: AppImage + Windows EXE GitHub Release
 ├── src/
-│   ├── main.c        # App lifecycle, event dispatch & playback loop
-│   ├── canvas.h/c    # 2-layer canvas data structures, compositing & onion skin
-│   ├── tools.h/c     # 16 classic drawing tools & shape algorithms
-│   ├── ui.h/c        # Retro Windows 95 beveled UI & timeline renderer
-│   ├── export.h/c    # FFmpeg pipe exporter for MP4, GIF & .anp project format
-│   └── font.h/c      # Embedded 8x8 retro bitmap font
+│   ├── main.c                    # App lifecycle, event dispatch & playback loop
+│   ├── canvas.h/c                # 2-layer canvas data structures, compositing & onion skin
+│   ├── tools.h/c                 # 16 classic drawing tools & shape algorithms
+│   ├── ui.h/c                    # Retro Windows 95 beveled UI & timeline renderer
+│   ├── export.h/c                # FFmpeg pipe exporter for MP4, GIF & .anp project format
+│   └── font.h/c                  # Embedded 8x8 retro bitmap font
 └── tests/
-    └── test_anim.c   # Automated test suite
+    └── test_anim.c               # Automated test suite
 ```
+
+---
+
+## 📜 License
+
+AnimPaint is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation.
+
+See [LICENSE](LICENSE) for the full text. This program is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

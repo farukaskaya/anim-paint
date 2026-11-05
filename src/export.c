@@ -3,6 +3,17 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ffmpeg is invoked through a shell pipe. Windows needs _popen and NUL. */
+#ifdef _WIN32
+#define ANP_POPEN  _popen
+#define ANP_PCLOSE _pclose
+#define ANP_NULL_DEVICE "NUL"
+#else
+#define ANP_POPEN  popen
+#define ANP_PCLOSE pclose
+#define ANP_NULL_DEVICE "/dev/null"
+#endif
+
 /* Helper to composite a single frame (Layer 0 + Layer 1) into an RGBA buffer */
 static void composite_frame_to_buffer(CanvasProject *proj, int frame_idx, uint32_t *out_buffer) {
     int total_pixels = proj->width * proj->height;
@@ -56,10 +67,10 @@ bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps) {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - "
-        "-c:v libx264 -pix_fmt yuv420p -movflags +faststart \"%s\" > /dev/null 2>&1",
-        w, h, fps, filepath);
+        "-c:v libx264 -pix_fmt yuv420p -movflags +faststart \"%s\" > %s 2>&1",
+        w, h, fps, filepath, ANP_NULL_DEVICE);
 
-    FILE *pipe = popen(cmd, "w");
+    FILE *pipe = ANP_POPEN(cmd, "w");
     if (!pipe) {
         free(frame_buffer);
         return false;
@@ -69,14 +80,14 @@ bool export_to_mp4(CanvasProject *proj, const char *filepath, int fps) {
         composite_frame_to_buffer(proj, i, frame_buffer);
         size_t written = fwrite(frame_buffer, sizeof(uint32_t), total_pixels, pipe);
         if (written < (size_t)total_pixels) {
-            pclose(pipe);
+            ANP_PCLOSE(pipe);
             free(frame_buffer);
             return false;
         }
     }
 
     free(frame_buffer);
-    int status = pclose(pipe);
+    int status = ANP_PCLOSE(pipe);
     return (status == 0);
 }
 
@@ -94,10 +105,10 @@ bool export_to_gif(CanvasProject *proj, const char *filepath, int fps) {
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - "
-        "-filter_complex \"[0:v] split [a][b];[a] palettegen=reserve_transparent=0 [p];[b][p] paletteuse\" \"%s\" > /dev/null 2>&1",
-        w, h, fps, filepath);
+        "-filter_complex \"[0:v] split [a][b];[a] palettegen=reserve_transparent=0 [p];[b][p] paletteuse\" \"%s\" > %s 2>&1",
+        w, h, fps, filepath, ANP_NULL_DEVICE);
 
-    FILE *pipe = popen(cmd, "w");
+    FILE *pipe = ANP_POPEN(cmd, "w");
     if (!pipe) {
         free(frame_buffer);
         return false;
@@ -107,14 +118,14 @@ bool export_to_gif(CanvasProject *proj, const char *filepath, int fps) {
         composite_frame_to_buffer(proj, i, frame_buffer);
         size_t written = fwrite(frame_buffer, sizeof(uint32_t), total_pixels, pipe);
         if (written < (size_t)total_pixels) {
-            pclose(pipe);
+            ANP_PCLOSE(pipe);
             free(frame_buffer);
             return false;
         }
     }
 
     free(frame_buffer);
-    int status = pclose(pipe);
+    int status = ANP_PCLOSE(pipe);
     return (status == 0);
 }
 
@@ -131,10 +142,10 @@ bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fp
 
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
-        "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - \"%s\" > /dev/null 2>&1",
-        w, h, fps, pattern_path);
+        "ffmpeg -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - \"%s\" > %s 2>&1",
+        w, h, fps, pattern_path, ANP_NULL_DEVICE);
 
-    FILE *pipe = popen(cmd, "w");
+    FILE *pipe = ANP_POPEN(cmd, "w");
     if (!pipe) {
         free(frame_buffer);
         return false;
@@ -146,7 +157,7 @@ bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fp
     }
 
     free(frame_buffer);
-    int status = pclose(pipe);
+    int status = ANP_PCLOSE(pipe);
     return (status == 0);
 }
 

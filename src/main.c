@@ -209,22 +209,22 @@ int main(int argc, char *argv[]) {
                                 proj->canvas_dirty = true;
                                 ui_notify(&ui, proj->onion_skin_enabled ? "Onion Skin: ON" : "Onion Skin: OFF");
                                 break;
-                            case SDLK_b: ts.active_tool = TOOL_BRUSH; break;
-                            case SDLK_p: ts.active_tool = TOOL_PENCIL; break;
-                            case SDLK_e: ts.active_tool = TOOL_ERASER; break;
-                            case SDLK_g: ts.active_tool = TOOL_BUCKET; break;
-                            case SDLK_i: ts.active_tool = TOOL_EYEDROPPER; break;
-                            case SDLK_l: ts.active_tool = TOOL_LINE; break;
-                            case SDLK_r: ts.active_tool = TOOL_RECTANGLE; break;
-                            case SDLK_c: ts.active_tool = TOOL_ELLIPSE; break;
-                            case SDLK_s: ts.active_tool = TOOL_SELECT; break;
+                            case SDLK_b: ts.lasso_active = false; ts.active_tool = TOOL_BRUSH; break;
+                            case SDLK_p: ts.lasso_active = false; ts.active_tool = TOOL_PENCIL; break;
+                            case SDLK_e: ts.lasso_active = false; ts.active_tool = TOOL_ERASER; break;
+                            case SDLK_g: ts.lasso_active = false; ts.active_tool = TOOL_BUCKET; break;
+                            case SDLK_i: ts.lasso_active = false; ts.active_tool = TOOL_EYEDROPPER; break;
+                            case SDLK_l: ts.lasso_active = false; ts.active_tool = TOOL_LINE; break;
+                            case SDLK_r: ts.lasso_active = false; ts.active_tool = TOOL_RECTANGLE; break;
+                            case SDLK_c: ts.lasso_active = false; ts.active_tool = TOOL_ELLIPSE; break;
+                            case SDLK_s: ts.lasso_active = false; ts.active_tool = TOOL_SELECT; break;
+                            case SDLK_f: ts.lasso_active = false; ts.active_tool = TOOL_FREE_SELECT; break;
                             case SDLK_ESCAPE:
                                 if (ui.active_menu >= 0) {
                                     ui.active_menu = -1;
-                                } else if (proj->has_selection) {
-                                    proj->has_selection = false;
-                                    proj->selection_floating = false;
-                                    proj->canvas_dirty = true;
+                                } else if (proj->has_selection || ts.lasso_active) {
+                                    ts.lasso_active = false;
+                                    tool_cancel_selection(&ts, proj);
                                 }
                                 break;
                             default:

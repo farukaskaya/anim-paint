@@ -3,6 +3,7 @@
 #include <assert.h>
 #include "../src/canvas.h"
 #include "../src/export.h"
+#include "../src/tools.h"
 
 int main() {
     printf("=== Running AnimPaint Automated Tests ===\n");
@@ -29,6 +30,44 @@ int main() {
     canvas_set_pixel(proj, 0, LAYER_ANIM, 50, 50, make_rgba(255, 0, 0, 255));
     assert(canvas_get_pixel(proj, 0, LAYER_ANIM, 50, 50) == make_rgba(255, 0, 0, 255));
     printf("[PASS] Pixel access on both layers\n");
+
+    /* 3b. Test free-form (lasso) selection and move */
+    CanvasProject *sel_proj = canvas_create(64, 64);
+    ToolState ts;
+    tools_init(&ts);
+    ts.active_tool = TOOL_FREE_SELECT;
+
+    /* Draw a 10x10 red block on the animation layer */
+    for (int y = 10; y < 20; y++) {
+        for (int x = 10; x < 20; x++) {
+            canvas_set_pixel(sel_proj, 0, LAYER_ANIM, x, y, make_rgba(255, 0, 0, 255));
+        }
+    }
+
+    /* Lasso around the block */
+    tool_on_mouse_down(&ts, sel_proj, SDL_BUTTON_LEFT, 5, 5);
+    tool_on_mouse_move(&ts, sel_proj, 25, 5);
+    tool_on_mouse_move(&ts, sel_proj, 25, 25);
+    tool_on_mouse_move(&ts, sel_proj, 5, 25);
+    tool_on_mouse_up(&ts, sel_proj, SDL_BUTTON_LEFT, 5, 5);
+
+    assert(sel_proj->has_selection);
+    assert(sel_proj->sel_w >= 20 && sel_proj->sel_h >= 20);
+    assert(sel_proj->selection_mask != NULL);
+    printf("[PASS] Free-form lasso creates a masked selection\n");
+
+    /* Drag the selection +5,+5: source must be cut, destination receives pixels */
+    tool_on_mouse_down(&ts, sel_proj, SDL_BUTTON_LEFT, 15, 15);
+    tool_on_mouse_move(&ts, sel_proj, 20, 20);
+    tool_on_mouse_up(&ts, sel_proj, SDL_BUTTON_LEFT, 20, 20);
+
+    assert(canvas_get_pixel(sel_proj, 0, LAYER_ANIM, 11, 11) == 0);
+    assert(canvas_get_pixel(sel_proj, 0, LAYER_ANIM, 21, 21) == make_rgba(255, 0, 0, 255));
+    printf("[PASS] Lasso selection cuts and moves pixels\n");
+
+    tool_cancel_selection(&ts, sel_proj);
+    assert(!sel_proj->has_selection);
+    canvas_destroy(sel_proj);
 
     /* 4. Test Adding and Duplicating Frames */
     int f1 = canvas_add_frame(proj, 1);

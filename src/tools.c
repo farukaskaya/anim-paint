@@ -563,6 +563,245 @@ void tool_cancel_polygon(ToolState *ts) {
     ts->poly_point_count = 0;
 }
 
+/* ------------------------------------------------------------------ */
+/* Selection helpers (rectangular + free-form lasso)                  */
+/* ------------------------------------------------------------------ */
+
+static uint32_t blend_src_over(uint32_t dst, uint32_t src) {
+    uint8_t sr, sg, sb, sa;
+    unpack_rgba(src, &sr, &sg, &sb, &sa);
+    if (sa == 0) return dst;
+    if (sa == 255) return src;
+
+    uint8_t dr, dg, db, da;
+    unpack_rgba(dst, &dr, &dg, &db, &da);
+    float a_src = sa / 255.0f;
+    float a_dst = (da / 255.0f) * (1.0f - a_src);
+    float a_out = a_src + a_dst;
+    if (a_out <= 0.001f) return 0;
+
+    uint8_t r = (uint8_t)((sr * a_src + dr * a_dst) / a_out);
+    uint8_t g = (uint8_t)((sg * a_src + dg * a_dst) / a_out);
+    uint8_t b = (uint8_t)((sb * a_src + db * a_dst) / a_out);
+    uint8_t a = (uint8_t)(a_out * 255.0f);
+    return make_rgba(r, g, b, a);
+}
+
+/* Free all selection buffers and reset selection state. */
+static void selection_free_buffers(CanvasProject *proj) {
+    if (proj->selection_pixels) {
+        free(proj->selection_pixels);
+        proj->selection_pixels = NULL;
+    }
+    if (proj->selection_mask) {
+        free(proj->selection_mask);
+        proj->selection_mask = NULL;
+    }
+    proj->sel_x = 0;
+    proj->sel_y = 0;
+    proj->sel_w = 0;
+    proj->sel_h = 0;
+    proj->has_selection = false;
+    proj->selection_floating = false;
+    proj->sel_outline_count = 0;
+}
+
+void tool_clear_selection(CanvasProject *proj) {
+    selection_free_buffers(proj);
+    proj->canvas_dirty = true;
+}
+
+/* Point-in-selection test (uses the mask for lasso selections). */
+static bool selection_contains(CanvasProject *proj, int x, int y) {
+    if (!proj->has_selection) return false;
+    int lx = x - proj->sel_x;
+    int ly = y - proj->sel_y;
+    if (lx < 0 || lx >= proj->sel_w || ly < 0 || ly >= proj->sel_h) return false;
+    if (proj->selection_mask) {
+        return proj->selection_mask[ly * proj->sel_w + lx] != 0;
+    }
+    return true;
+}
+
+/* Erase the selected pixels from the source layer (used when a move starts). */
+static void selection_clear_source(CanvasProject *proj) {
+    int f = proj->current_frame;
+    int l = proj->active_layer;
+    uint32_t clear_col = (l == LAYER_BG) ? make_rgba(255, 255, 255, 255)
+                                         : make_rgba(0, 0, 0, 0);
+    for (int sy = 0; sy < proj->sel_h; sy++) {
+        for (int sx = 0; sx < proj->sel_w; sx++) {
+            int idx = sy * proj->sel_w + sx;
+            if (proj->selection_mask && !proj->selection_mask[idx]) continue;
+            canvas_set_pixel(proj, f, l, proj->sel_x + sx, proj->sel_y + sy, clear_col);
+        }
+    }
+    proj->canvas_dirty = true;
+}
+
+/* Lift the selection off the canvas so it can be dragged. */
+static void selection_begin_move(CanvasProject *proj) {
+    if (!proj->has_selection || proj->selection_floating) return;
+    canvas_push_undo(proj);
+
+    /* Refresh the buffer in case the selection area was painted since it was made. */
+    if (proj->selection_pixels) {
+        int f = proj->current_frame;
+        int l = proj->active_layer;
+        for (int sy = 0; sy < proj->sel_h; sy++) {
+            for (int sx = 0; sx < proj->sel_w; sx++) {
+                int idx = sy * proj->sel_w + sx;
+                if (proj->selection_mask && !proj->selection_mask[idx]) continue;
+                proj->selection_pixels[idx] = canvas_get_pixel(
+                    proj, f, l, proj->sel_x + sx, proj->sel_y + sy);
+            }
+        }
+    }
+
+    selection_clear_source(proj);
+    proj->selection_floating = true;
+    proj->canvas_dirty = true;
+}
+
+/* Copy the selected layer pixels into the selection buffer. */
+static void selection_extract(CanvasProject *proj, uint8_t *mask) {
+    int w = proj->sel_w;
+    int h = proj->sel_h;
+    if (w <= 0 || h <= 0) {
+        free(mask);
+        return;
+    }
+
+    uint32_t *pixels = (uint32_t *)malloc((size_t)w * h * sizeof(uint32_t));
+    if (!pixels) {
+        free(mask);
+        return;
+    }
+
+    int f = proj->current_frame;
+    int l = proj->active_layer;
+    for (int sy = 0; sy < h; sy++) {
+        for (int sx = 0; sx < w; sx++) {
+            int idx = sy * w + sx;
+            if (mask && !mask[idx]) {
+                pixels[idx] = 0;
+            } else {
+                pixels[idx] = canvas_get_pixel(proj, f, l, proj->sel_x + sx, proj->sel_y + sy);
+            }
+        }
+    }
+
+    free(proj->selection_pixels);
+    free(proj->selection_mask);
+    proj->selection_pixels = pixels;
+    proj->selection_mask = mask;
+    proj->has_selection = true;
+    proj->selection_floating = false;
+    proj->canvas_dirty = true;
+}
+
+/* Paint the floating selection back onto the active layer. */
+void tool_commit_selection(ToolState *ts, CanvasProject *proj) {
+    (void)ts;
+    if (!proj->has_selection || !proj->selection_floating || !proj->selection_pixels) return;
+
+    int f = proj->current_frame;
+    int l = proj->active_layer;
+    for (int sy = 0; sy < proj->sel_h; sy++) {
+        for (int sx = 0; sx < proj->sel_w; sx++) {
+            int idx = sy * proj->sel_w + sx;
+            if (proj->selection_mask && !proj->selection_mask[idx]) continue;
+            uint32_t src = proj->selection_pixels[idx];
+            if ((src & 0xFF000000) == 0) continue;
+            uint32_t dst = canvas_get_pixel(proj, f, l, proj->sel_x + sx, proj->sel_y + sy);
+            canvas_set_pixel(proj, f, l, proj->sel_x + sx, proj->sel_y + sy,
+                             blend_src_over(dst, src));
+        }
+    }
+    proj->selection_floating = false;
+    proj->canvas_dirty = true;
+}
+
+/* Deselect: bake any floating pixels, then drop the selection. */
+void tool_cancel_selection(ToolState *ts, CanvasProject *proj) {
+    if (proj->selection_floating) {
+        tool_commit_selection(ts, proj);
+    }
+    selection_free_buffers(proj);
+    proj->canvas_dirty = true;
+}
+
+/* Bresenham line into a local selection mask. */
+static void mask_draw_line(uint8_t *mask, int w, int h, int x0, int y0, int x1, int y1) {
+    int dx = abs(x1 - x0);
+    int dy = abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1;
+    int sy = (y0 < y1) ? 1 : -1;
+    int err = dx - dy;
+
+    while (1) {
+        if (x0 >= 0 && x0 < w && y0 >= 0 && y0 < h) {
+            mask[y0 * w + x0] = 1;
+        }
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 > -dy) { err -= dy; x0 += sx; }
+        if (e2 < dx) { err += dx; y0 += sy; }
+    }
+}
+
+static int compare_ints(const void *a, const void *b) {
+    int ia = *(const int *)a;
+    int ib = *(const int *)b;
+    return (ia > ib) - (ia < ib);
+}
+
+/* Rasterize the lasso polygon into a mask covering the bounding box. */
+static bool polygon_to_mask(const int *px, const int *py, int n,
+                            int ox, int oy, int w, int h, uint8_t *mask) {
+    if (n < 3 || w <= 0 || h <= 0) return false;
+    memset(mask, 0, (size_t)w * h);
+
+    int *nodes = (int *)malloc(sizeof(int) * (size_t)(n + 2));
+    if (!nodes) return false;
+
+    for (int y = 0; y < h; y++) {
+        int gy = oy + y;
+        int count = 0;
+        int j = n - 1;
+        for (int i = 0; i < n; i++) {
+            if ((py[i] < gy && py[j] >= gy) || (py[j] < gy && py[i] >= gy)) {
+                nodes[count++] = px[i] + (gy - py[i]) * (px[j] - px[i]) / (py[j] - py[i]);
+            }
+            j = i;
+        }
+        if (count > 1) {
+            qsort(nodes, (size_t)count, sizeof(int), compare_ints);
+        }
+        for (int i = 0; i + 1 < count; i += 2) {
+            int x_start = nodes[i] - ox;
+            int x_end = nodes[i + 1] - ox;
+            if (x_start > x_end) { int tmp = x_start; x_start = x_end; x_end = tmp; }
+            if (x_start < 0) x_start = 0;
+            if (x_end >= w) x_end = w - 1;
+            for (int x = x_start; x <= x_end; x++) {
+                mask[y * w + x] = 1;
+            }
+        }
+    }
+
+    /* Include the outline itself so very thin lassos still select pixels. */
+    for (int i = 0; i < n; i++) {
+        int next_i = (i + 1) % n;
+        mask_draw_line(mask, w, h,
+                       px[i] - ox, py[i] - oy,
+                       px[next_i] - ox, py[next_i] - oy);
+    }
+
+    free(nodes);
+    return true;
+}
+
 /* Mouse Event Handlers */
 void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int cy) {
     if (cx < 0 || cx >= proj->width || cy < 0 || cy >= proj->height) return;
@@ -590,7 +829,8 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
 
     /* Push undo snapshot before stroke starts */
     if (ts->active_tool != TOOL_EYEDROPPER && ts->active_tool != TOOL_MAGNIFIER &&
-        ts->active_tool != TOOL_SELECT && ts->active_tool != TOOL_TEXT && ts->active_tool != TOOL_POLYGON) {
+        ts->active_tool != TOOL_SELECT && ts->active_tool != TOOL_FREE_SELECT &&
+        ts->active_tool != TOOL_TEXT && ts->active_tool != TOOL_POLYGON) {
         if (ts->active_tool != TOOL_CURVE || ts->curve_step == 0) {
             canvas_push_undo(proj);
         }
@@ -657,15 +897,26 @@ void tool_on_mouse_down(ToolState *ts, CanvasProject *proj, int btn, int cx, int
             }
             ts->is_drawing = false;
             break;
+        case TOOL_FREE_SELECT:
+            if (proj->has_selection && selection_contains(proj, cx, cy)) {
+                selection_begin_move(proj);
+            } else {
+                if (proj->selection_floating) tool_commit_selection(ts, proj);
+                selection_free_buffers(proj);
+                ts->lasso_active = true;
+                ts->lasso_point_count = 0;
+                ts->lasso_points_x[ts->lasso_point_count] = cx;
+                ts->lasso_points_y[ts->lasso_point_count] = cy;
+                ts->lasso_point_count++;
+            }
+            break;
         case TOOL_SELECT:
             if (proj->has_selection && cx >= proj->sel_x && cx < proj->sel_x + proj->sel_w &&
                 cy >= proj->sel_y && cy < proj->sel_y + proj->sel_h) {
-                proj->selection_floating = true;
+                selection_begin_move(proj);
             } else {
-                if (proj->has_selection && proj->selection_floating) {
-                    proj->selection_floating = false;
-                    proj->has_selection = false;
-                }
+                if (proj->selection_floating) tool_commit_selection(ts, proj);
+                selection_free_buffers(proj);
                 proj->sel_x = cx;
                 proj->sel_y = cy;
                 proj->sel_w = 0;
@@ -713,6 +964,22 @@ void tool_on_mouse_move(ToolState *ts, CanvasProject *proj, int cx, int cy) {
             break;
         case TOOL_AIRBRUSH:
             apply_airbrush(ts, proj, cx, cy, draw_color);
+            break;
+        case TOOL_FREE_SELECT:
+            if (proj->has_selection && proj->selection_floating) {
+                int dx = cx - ts->prev_x;
+                int dy = cy - ts->prev_y;
+                proj->sel_x += dx;
+                proj->sel_y += dy;
+                proj->canvas_dirty = true;
+            } else if (ts->lasso_active && ts->lasso_point_count < MAX_SELECTION_POINTS) {
+                int last = ts->lasso_point_count - 1;
+                if (ts->lasso_points_x[last] != cx || ts->lasso_points_y[last] != cy) {
+                    ts->lasso_points_x[ts->lasso_point_count] = cx;
+                    ts->lasso_points_y[ts->lasso_point_count] = cy;
+                    ts->lasso_point_count++;
+                }
+            }
             break;
         case TOOL_SELECT:
             if (proj->has_selection && proj->selection_floating) {
@@ -771,16 +1038,54 @@ void tool_on_mouse_up(ToolState *ts, CanvasProject *proj, int btn, int cx, int c
         case TOOL_ELLIPSE:
             draw_ellipse(proj, ts->start_x, ts->start_y, cx, cy, draw_color, fill_color, ts->shape_fill, ts->line_width);
             break;
-        case TOOL_SELECT:
-            if (!proj->has_selection && proj->sel_w > 1 && proj->sel_h > 1) {
-                proj->has_selection = true;
-                if (proj->selection_pixels) free(proj->selection_pixels);
-                proj->selection_pixels = (uint32_t *)malloc(proj->sel_w * proj->sel_h * sizeof(uint32_t));
-                for (int sy = 0; sy < proj->sel_h; sy++) {
-                    for (int sx = 0; sx < proj->sel_w; sx++) {
-                        proj->selection_pixels[sy * proj->sel_w + sx] = canvas_get_pixel(proj, proj->current_frame, proj->active_layer, proj->sel_x + sx, proj->sel_y + sy);
+        case TOOL_FREE_SELECT:
+            if (ts->lasso_active) {
+                ts->lasso_active = false;
+
+                int min_x = ts->lasso_points_x[0];
+                int max_x = ts->lasso_points_x[0];
+                int min_y = ts->lasso_points_y[0];
+                int max_y = ts->lasso_points_y[0];
+                for (int i = 1; i < ts->lasso_point_count; i++) {
+                    if (ts->lasso_points_x[i] < min_x) min_x = ts->lasso_points_x[i];
+                    if (ts->lasso_points_x[i] > max_x) max_x = ts->lasso_points_x[i];
+                    if (ts->lasso_points_y[i] < min_y) min_y = ts->lasso_points_y[i];
+                    if (ts->lasso_points_y[i] > max_y) max_y = ts->lasso_points_y[i];
+                }
+
+                int w = max_x - min_x + 1;
+                int h = max_y - min_y + 1;
+                if (ts->lasso_point_count >= 3 && w > 1 && h > 1) {
+                    uint8_t *mask = (uint8_t *)malloc((size_t)w * h);
+                    if (mask && polygon_to_mask(ts->lasso_points_x, ts->lasso_points_y,
+                                                ts->lasso_point_count, min_x, min_y, w, h, mask)) {
+                        proj->sel_x = min_x;
+                        proj->sel_y = min_y;
+                        proj->sel_w = w;
+                        proj->sel_h = h;
+
+                        /* Keep the lasso outline relative to the selection box. */
+                        int count = ts->lasso_point_count;
+                        if (count > MAX_SELECTION_POINTS) count = MAX_SELECTION_POINTS;
+                        proj->sel_outline_count = count;
+                        for (int i = 0; i < count; i++) {
+                            proj->sel_outline_x[i] = ts->lasso_points_x[i] - min_x;
+                            proj->sel_outline_y[i] = ts->lasso_points_y[i] - min_y;
+                        }
+
+                        selection_extract(proj, mask);
+                    } else {
+                        free(mask);
                     }
                 }
+            } else if (proj->selection_floating) {
+                tool_commit_selection(ts, proj);
+            }
+            break;
+        case TOOL_SELECT:
+            if (!proj->has_selection && proj->sel_w > 1 && proj->sel_h > 1) {
+                proj->sel_outline_count = 0;
+                selection_extract(proj, NULL);
             }
             break;
         case TOOL_CURVE:
@@ -896,16 +1201,43 @@ void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *rende
         }
     }
 
-    /* Selection marquee dashed/dotted box */
-    if (proj->has_selection) {
-        int sx = canvas_screen_x + (int)(proj->sel_x * zoom);
-        int sy = canvas_screen_y + (int)(proj->sel_y * zoom);
-        int sw = (int)(proj->sel_w * zoom);
-        int sh = (int)(proj->sel_h * zoom);
-
+    /* Free-form lasso path while the user is drawing it */
+    if (ts->active_tool == TOOL_FREE_SELECT && ts->lasso_active && ts->lasso_point_count > 1) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 180, 255);
-        SDL_Rect r = { sx, sy, sw, sh };
-        SDL_RenderDrawRect(renderer, &r);
+        for (int i = 0; i < ts->lasso_point_count - 1; i++) {
+            int x0 = canvas_screen_x + (int)(ts->lasso_points_x[i] * zoom);
+            int y0 = canvas_screen_y + (int)(ts->lasso_points_y[i] * zoom);
+            int x1 = canvas_screen_x + (int)(ts->lasso_points_x[i + 1] * zoom);
+            int y1 = canvas_screen_y + (int)(ts->lasso_points_y[i + 1] * zoom);
+            SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
+        }
+        int first_x = canvas_screen_x + (int)(ts->lasso_points_x[0] * zoom);
+        int first_y = canvas_screen_y + (int)(ts->lasso_points_y[0] * zoom);
+        int last_x = canvas_screen_x + (int)(ts->lasso_points_x[ts->lasso_point_count - 1] * zoom);
+        int last_y = canvas_screen_y + (int)(ts->lasso_points_y[ts->lasso_point_count - 1] * zoom);
+        SDL_RenderDrawLine(renderer, last_x, last_y, first_x, first_y);
+    }
+
+    /* Selection marquee: lasso outline when available, otherwise a box */
+    if (proj->has_selection) {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 180, 255);
+        if (proj->sel_outline_count > 1) {
+            for (int i = 0; i < proj->sel_outline_count; i++) {
+                int next_i = (i + 1) % proj->sel_outline_count;
+                int x0 = canvas_screen_x + (int)((proj->sel_x + proj->sel_outline_x[i]) * zoom);
+                int y0 = canvas_screen_y + (int)((proj->sel_y + proj->sel_outline_y[i]) * zoom);
+                int x1 = canvas_screen_x + (int)((proj->sel_x + proj->sel_outline_x[next_i]) * zoom);
+                int y1 = canvas_screen_y + (int)((proj->sel_y + proj->sel_outline_y[next_i]) * zoom);
+                SDL_RenderDrawLine(renderer, x0, y0, x1, y1);
+            }
+        } else {
+            int sx = canvas_screen_x + (int)(proj->sel_x * zoom);
+            int sy = canvas_screen_y + (int)(proj->sel_y * zoom);
+            int sw = (int)(proj->sel_w * zoom);
+            int sh = (int)(proj->sel_h * zoom);
+            SDL_Rect r = { sx, sy, sw, sh };
+            SDL_RenderDrawRect(renderer, &r);
+        }
     }
 
     /* Curve handles */

@@ -71,6 +71,12 @@ typedef struct {
     int poly_points_y[64];
     int poly_point_count;
 
+    /* Free-form (lasso) selection */
+    bool lasso_active;
+    int lasso_points_x[MAX_SELECTION_POINTS];
+    int lasso_points_y[MAX_SELECTION_POINTS];
+    int lasso_point_count;
+
     /* Text tool state */
     bool text_active;
     int text_x, text_y;
@@ -98,6 +104,13 @@ void tool_cancel_text(ToolState *ts);
 /* Polygon tool management */
 void tool_commit_polygon(ToolState *ts, CanvasProject *proj);
 void tool_cancel_polygon(ToolState *ts);
+
+/* Selection management */
+void tool_commit_selection(ToolState *ts, CanvasProject *proj);
+void tool_cancel_selection(ToolState *ts, CanvasProject *proj);
+
+/* Drop any selection buffers (used when switching project/frame/layer) */
+void tool_clear_selection(CanvasProject *proj);
 
 /* Render interactive previews (shapes, curve, text, selection box) */
 void tool_render_preview(ToolState *ts, CanvasProject *proj, SDL_Renderer *renderer, int canvas_screen_x, int canvas_screen_y, float zoom);

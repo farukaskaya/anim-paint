@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=AnimPaint
+Comment=Classic MS Paint style 2-layer animation studio
+Exec=animpaint
+Icon=animpaint
+Terminal=false
+Categories=Graphics;2DGraphics;Animation;
+Keywords=paint;draw;animate;animation;gif;

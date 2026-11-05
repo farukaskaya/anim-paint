@@ -293,12 +293,6 @@ static void render_menubar(UIState *ui, SDL_Renderer *r) {
         }
         font_draw_text(r, g_menus[i].title, g_menus[i].x + 6, 6, tc, 1);
     }
-
-    /* Quick export buttons on top-right */
-    int qx = ui->screen_w - 240;
-    ui_draw_button(r, qx, 2, 85, 18, false, "Export MP4");
-    ui_draw_button(r, qx + 90, 2, 75, 18, false, "Export GIF");
-    ui_draw_button(r, qx + 170, 2, 60, 18, false, "Save .anp");
 }
 
 /* Render active dropdown menu */
@@ -832,26 +826,6 @@ bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, 
                 return true;
             }
         }
-
-        /* Check quick export pills */
-        int qx = ui->screen_w - 240;
-        if (mx >= qx && mx < qx + 85) {
-            ui_notify(ui, "Exporting animation to output.mp4...");
-            SDL_RenderPresent(r);
-            bool ok = export_to_mp4(proj, "output.mp4", proj->fps);
-            ui_notify(ui, ok ? "Exported output.mp4 successfully!" : "Failed to export MP4 (check ffmpeg)");
-            return true;
-        } else if (mx >= qx + 90 && mx < qx + 165) {
-            ui_notify(ui, "Exporting animation to output.gif...");
-            SDL_RenderPresent(r);
-            bool ok = export_to_gif(proj, "output.gif", proj->fps);
-            ui_notify(ui, ok ? "Exported output.gif successfully!" : "Failed to export GIF (check ffmpeg)");
-            return true;
-        } else if (mx >= qx + 170 && mx < qx + 230) {
-            bool ok = project_save(proj, "project.anp");
-            ui_notify(ui, ok ? "Saved project.anp!" : "Failed to save project.anp");
-            return true;
-        }
         return true;
     }
 
@@ -876,9 +850,15 @@ bool ui_handle_mouse_down(UIState *ui, CanvasProject **proj_ptr, ToolState *ts, 
             int bx = TOOLBOX_X + 3 + col * (btn_w + 2);
             int by = TOOLBOX_Y + 4 + row * (btn_h + 2);
             if (mx >= bx && mx < bx + btn_w && my >= by && my < by + btn_h) {
-                /* Commit pending text/polygon before switching */
+                /* Commit pending text/polygon/selection before switching */
                 if (ts->text_active) tool_commit_text(ts, proj);
                 if (ts->poly_active) tool_commit_polygon(ts, proj);
+                if (ts->active_tool == TOOL_FREE_SELECT) {
+                    ts->lasso_active = false;
+                    tool_commit_selection(ts, proj);
+                } else if (ts->active_tool == TOOL_SELECT) {
+                    tool_commit_selection(ts, proj);
+                }
                 ts->active_tool = (ToolType)i;
                 return true;
             }

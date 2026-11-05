@@ -9,6 +9,7 @@
 #define NUM_LAYERS 2
 #define LAYER_BG 0
 #define LAYER_ANIM 1
+#define MAX_SELECTION_POINTS 2048
 
 /* A single frame of the animation with 2 layers */
 typedef struct {
@@ -66,10 +67,16 @@ typedef struct {
 
     /* Selection Buffer (for cut/copy/paste/move) */
     uint32_t *selection_pixels;
+    uint8_t *selection_mask;   /* 1 = pixel belongs to selection (lasso/rect) */
     int sel_x, sel_y, sel_w, sel_h;
     bool has_selection;
     bool selection_floating;   /* True if currently being dragged/moved */
     bool transparent_selection;/* Classic MS Paint feature: secondary color is key/transparent */
+
+    /* Free-form selection outline, stored relative to sel_x/sel_y */
+    int sel_outline_x[MAX_SELECTION_POINTS];
+    int sel_outline_y[MAX_SELECTION_POINTS];
+    int sel_outline_count;
 
     /* Composited preview buffer for rendering */
     uint32_t *composite_buffer;

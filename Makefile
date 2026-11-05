@@ -1,6 +1,7 @@
 CC ?= gcc
 CFLAGS ?= -Wall -Wextra -O2 -std=c99 $(shell pkg-config --cflags sdl2)
 LIBS ?= $(shell pkg-config --libs sdl2) -lm
+VERSION ?= 1.0.0
 
 SRC = src/main.c src/canvas.c src/tools.c src/ui.c src/font.c src/export.c
 OBJ = $(SRC:src/%.c=build/%.o)
@@ -23,4 +24,14 @@ clean:
 run: $(TARGET)
 	./$(TARGET)
 
-.PHONY: all clean run
+test: $(TARGET)
+	$(CC) $(CFLAGS) tests/test_anim.c src/canvas.c src/tools.c src/font.c src/export.c -o tests/test_anim $(LIBS)
+	cd tests && ./test_anim
+
+appimage: $(TARGET)
+	VERSION=$(VERSION) packaging/build-appimage.sh
+
+windows:
+	VERSION=$(VERSION) packaging/build-windows.sh
+
+.PHONY: all clean run test appimage windows

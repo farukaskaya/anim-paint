@@ -94,6 +94,7 @@ void canvas_destroy(CanvasProject *proj) {
     }
 
     if (proj->selection_pixels) free(proj->selection_pixels);
+    if (proj->selection_mask) free(proj->selection_mask);
     if (proj->composite_buffer) free(proj->composite_buffer);
     if (proj->canvas_texture) SDL_DestroyTexture(proj->canvas_texture);
     free(proj);
