@@ -50,11 +50,11 @@ typedef struct {
 } MenuDef;
 
 static MenuDef g_menus[5] = {
-    { "File", 0, 0, 6, { "New Animation", "Open (.anp)", "Save (.anp)", "Export MP4", "Export GIF", "Exit" } },
+    { "File", 0, 0, 6, { "New Animation", "Open (.fpaint)", "Save (.fpaint)", "Export MP4", "Export GIF", "Exit" } },
     { "Edit", 0, 0, 3, { "Undo", "Redo", "Clear Frame" } },
     { "View", 0, 0, 6, { "Zoom 100% (1x)", "Zoom 200% (2x)", "Zoom 400% (4x)", "Zoom 800% (8x)", "Center View", "Toggle Onion Skin" } },
     { "Animation", 0, 0, 7, { "Play / Pause", "Next Frame", "Prev Frame", "Add Frame", "Duplicate Frame", "Delete Frame", "Switch Layer" } },
-    { "Help", 0, 0, 2, { "Shortcuts Guide", "About AnimPaint" } }
+    { "Help", 0, 0, 2, { "Shortcuts Guide", "About Faruk Paint" } }
 };
 
 void ui_init(UIState *ui, int window_w, int window_h) {
@@ -673,20 +673,20 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
                     ui_notify(ui, "Created new animation project");
                     break;
                 }
-                case 1: { /* Open (.anp) */
-                    CanvasProject *loaded = project_load("project.anp");
+                case 1: { /* Open (.fpaint) */
+                    CanvasProject *loaded = project_load("project.fpaint");
                     if (loaded) {
                         canvas_destroy(proj);
                         *proj_ptr = loaded;
-                        ui_notify(ui, "Loaded project.anp");
+                        ui_notify(ui, "Loaded project.fpaint");
                     } else {
                         ui_notify(ui, export_get_last_error());
                     }
                     break;
                 }
-                case 2: { /* Save (.anp) */
-                    bool ok = project_save(proj, "project.anp");
-                    ui_notify(ui, ok ? "Saved project.anp!" : export_get_last_error());
+                case 2: { /* Save (.fpaint) */
+                    bool ok = project_save(proj, "project.fpaint");
+                    ui_notify(ui, ok ? "Saved project.fpaint!" : export_get_last_error());
                     break;
                 }
                 case 3: { /* Export MP4 */
@@ -783,7 +783,7 @@ static void handle_menu_action(UIState *ui, CanvasProject **proj_ptr, ToolState 
                     ui_notify(ui, "Shortcuts: Space=Play, Tab=Layer, O=Onion, P=Pencil, B=Brush, E=Eraser, G=Bucket");
                     break;
                 case 1:
-                    ui_notify(ui, "AnimPaint v1.0 - Classic MS Paint 2-Layer Animation Studio");
+                    ui_notify(ui, "Faruk Paint v1.0 - Classic MS Paint 2-Layer Animation Studio");
                     break;
             }
             break;

@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
     }
 
     SDL_Window *window = SDL_CreateWindow(
-        "AnimPaint - Classic MS Paint Animation Studio",
+        "Faruk Paint - Classic MS Paint Animation Studio",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         DEFAULT_WINDOW_W,
@@ -161,14 +161,14 @@ int main(int argc, char *argv[]) {
                         canvas_redo(proj);
                         ui_notify(&ui, "Redo");
                     } else if (ctrl && e.key.keysym.sym == SDLK_s) {
-                        bool ok = project_save(proj, "project.anp");
-                        ui_notify(&ui, ok ? "Saved project.anp!" : export_get_last_error());
+                        bool ok = project_save(proj, "project.fpaint");
+                        ui_notify(&ui, ok ? "Saved project.fpaint!" : export_get_last_error());
                     } else if (ctrl && e.key.keysym.sym == SDLK_o) {
-                        CanvasProject *loaded = project_load("project.anp");
+                        CanvasProject *loaded = project_load("project.fpaint");
                         if (loaded) {
                             canvas_destroy(proj);
                             proj = loaded;
-                            ui_notify(&ui, "Loaded project.anp!");
+                            ui_notify(&ui, "Loaded project.fpaint!");
                         } else {
                             ui_notify(&ui, export_get_last_error());
                         }

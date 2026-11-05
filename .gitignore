@@ -1,10 +1,10 @@
 build/
 dist/
-animpaint
-animpaint.exe
+farukpaint
+farukpaint.exe
 tests/test_anim
 tests/test_output.mp4
 tests/test_output.gif
 output.mp4
 output.gif
-*.anp
+*.fpaint

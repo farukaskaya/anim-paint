@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=AnimPaint
+Name=Faruk Paint
 Comment=Classic MS Paint style 2-layer animation studio
-Exec=animpaint
-Icon=animpaint
+Exec=farukpaint
+Icon=farukpaint
 Terminal=false
 Categories=Graphics;2DGraphics;
 Keywords=paint;draw;animate;animation;gif;

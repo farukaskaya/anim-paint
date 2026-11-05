@@ -7,7 +7,7 @@
 #include "../src/tools.h"
 
 int main() {
-    printf("=== Running AnimPaint Automated Tests ===\n");
+    printf("=== Running Faruk Paint Automated Tests ===\n");
 
     /* 1. Test Project Creation */
     CanvasProject *proj = canvas_create(320, 240);
@@ -99,17 +99,17 @@ int main() {
     printf("[PASS] Multi-frame animation generated (8 frames)\n");
 
     /* 5. Test Project Save and Load */
-    bool save_ok = project_save(proj, "test_proj.anp");
+    bool save_ok = project_save(proj, "test_proj.fpaint");
     assert(save_ok);
 
-    CanvasProject *loaded = project_load("test_proj.anp");
+    CanvasProject *loaded = project_load("test_proj.fpaint");
     assert(loaded != NULL);
     assert(loaded->frame_count == 8);
     assert(loaded->width == 320);
     assert(loaded->height == 240);
-    printf("[PASS] Binary project save and load (.anp)\n");
+    printf("[PASS] Binary project save and load (.fpaint)\n");
     canvas_destroy(loaded);
-    remove("test_proj.anp");
+    remove("test_proj.fpaint");
 
     /* 6. Test Export to MP4 using ffmpeg */
     printf("Testing export to MP4...\n");
@@ -125,7 +125,7 @@ int main() {
     printf("[PASS] Export to GIF (test_output.gif)\n");
 
     /* 8. Error reporting */
-    assert(!project_save(proj, "/nonexistent-dir/x.anp"));
+    assert(!project_save(proj, "/nonexistent-dir/x.fpaint"));
     assert(strlen(export_get_last_error()) > 0);
     printf("[PASS] Failure reasons are reported\n");
 

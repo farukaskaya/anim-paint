@@ -7,23 +7,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${VERSION:-1.0.0}"
 DIST="$ROOT/dist"
-PKG="$DIST/AnimPaint-${VERSION}-windows-x86_64"
+PKG="$DIST/FarukPaint-${VERSION}-windows-x86_64"
 
 rm -rf "$PKG"
 mkdir -p "$PKG"
 
 make -C "$ROOT" clean all
 
-if [ -f "$ROOT/animpaint.exe" ]; then
-    BIN="$ROOT/animpaint.exe"
-elif [ -f "$ROOT/animpaint" ]; then
-    BIN="$ROOT/animpaint"
+if [ -f "$ROOT/farukpaint.exe" ]; then
+    BIN="$ROOT/farukpaint.exe"
+elif [ -f "$ROOT/farukpaint" ]; then
+    BIN="$ROOT/farukpaint"
 else
-    echo "Build failed: animpaint executable not found" >&2
+    echo "Build failed: farukpaint executable not found" >&2
     exit 1
 fi
 
-cp "$BIN" "$PKG/AnimPaint.exe"
+cp "$BIN" "$PKG/FarukPaint.exe"
 cp "$ROOT/README.md" "$ROOT/LICENSE" "$PKG/" 2>/dev/null || true
 
 # Ship SDL2.dll next to the executable so the release is portable.
@@ -39,8 +39,8 @@ if [ ! -f "$PKG/SDL2.dll" ]; then
 fi
 
 mkdir -p "$DIST"
-( cd "$DIST" && zip -r "AnimPaint-${VERSION}-windows-x86_64.zip" "AnimPaint-${VERSION}-windows-x86_64" )
+( cd "$DIST" && zip -r "FarukPaint-${VERSION}-windows-x86_64.zip" "FarukPaint-${VERSION}-windows-x86_64" )
 
 # Also publish the bare executable for users who already have SDL2.dll.
-cp "$PKG/AnimPaint.exe" "$DIST/AnimPaint-${VERSION}-windows-x86_64.exe"
-echo "Created $DIST/AnimPaint-${VERSION}-windows-x86_64.zip"
+cp "$PKG/FarukPaint.exe" "$DIST/FarukPaint-${VERSION}-windows-x86_64.exe"
+echo "Created $DIST/FarukPaint-${VERSION}-windows-x86_64.zip"

@@ -1,8 +1,8 @@
-# AnimPaint 🎨🎬
+# Faruk Paint 🎨🎬
 
 > **No tool bloat. Just the iconic Windows 95/98 MS Paint tools paired with a clean 2-layer animation studio.**
 
-**AnimPaint** is a native, ultra-lightweight 2D animation suite written in C (using SDL2 and ffmpeg). It replaces the confusing clutter of modern digital art apps with the beloved, laser-focused toolset of classic MS Paint, while adding essential animation superpowers: **onion skinning, a frame-reel timeline, 2 dedicated layers (Background & Animation), and one-click MP4 / GIF export**.
+**Faruk Paint** is a native, ultra-lightweight 2D animation suite written in C (using SDL2 and ffmpeg). It replaces the confusing clutter of modern digital art apps with the beloved, laser-focused toolset of classic MS Paint, while adding essential animation superpowers: **onion skinning, a frame-reel timeline, 2 dedicated layers (Background & Animation), and one-click MP4 / GIF export**.
 
 ---
 
@@ -45,8 +45,10 @@
 ### 🚀 Direct MP4 & GIF Export (via ffmpeg)
 - **One-Click MP4:** Directly encodes high-compatibility H.264 video (`output.mp4`) ready for web, Discord, YouTube, or social media.
 - **High-Quality GIF:** Two-pass palette generation (`output.gif`) with zero color banding.
-- **Native Project Save/Load:** Lightweight `.anp` binary files to preserve your frames and layers.
+- **Native Project Save/Load:** Lightweight `.fpaint` binary files to preserve your frames and layers.
 - Export and save live in the **File** menu (the duplicate top-right shortcut buttons have been removed to keep the canvas clean).
+
+> **Note:** `.fpaint` replaces the old `.anp` format. Projects saved with older versions are not compatible.
 
 ---
 
@@ -60,8 +62,8 @@
 | `O` | Toggle Onion Skinning |
 | `Ctrl + Z` | Undo |
 | `Ctrl + Y` | Redo |
-| `Ctrl + S` | Save Project (`project.anp`) |
-| `Ctrl + O` | Load Project (`project.anp`) |
+| `Ctrl + S` | Save Project (`project.fpaint`) |
+| `Ctrl + O` | Load Project (`project.fpaint`) |
 | `Ctrl + N` | New Animation |
 | `Ctrl + E` | Export MP4 (`output.mp4`) |
 | `Ctrl + G` | Export GIF (`output.gif`) |
@@ -101,7 +103,7 @@ make
 
 ### Launch
 ```bash
-./animpaint
+./farukpaint
 ```
 or simply:
 ```bash
@@ -122,18 +124,18 @@ This produces a portable `.zip` and a bare `.exe` in `dist/`. FFmpeg must be ins
 
 ### FFmpeg troubleshooting
 
-AnimPaint reports the specific failure reason in the status bar instead of a generic error.
+Faruk Paint reports the specific failure reason in the status bar instead of a generic error.
 
-- **"FFmpeg not found"** — `ffmpeg.exe` is not on `PATH` for this process. Add its `bin` folder to the system/user `PATH`, then **restart AnimPaint** (an already-running app does not see new `PATH` entries).
+- **"FFmpeg not found"** — `ffmpeg.exe` is not on `PATH` for this process. Add its `bin` folder to the system/user `PATH`, then **restart Faruk Paint** (an already-running app does not see new `PATH` entries).
 - **"FFmpeg failed (exit code N)"** — FFmpeg ran but rejected the encode. The full FFmpeg log is saved next to the output as `output.mp4.ffmpeg.log` / `output.gif.ffmpeg.log`.
-- **"Could not open ... for writing"** — the working folder is read-only (for example `Program Files`). Run AnimPaint from a writable folder such as `Documents`.
+- **"Could not open ... for writing"** — the working folder is read-only (for example `Program Files`). Run Faruk Paint from a writable folder such as `Documents`.
 
 ### Build a Linux AppImage
 ```bash
 sudo apt install libsdl2-dev make curl
 VERSION=1.0.0 packaging/build-appimage.sh
 ```
-The AppImage is written to `dist/AnimPaint-<version>-x86_64.AppImage`.
+The AppImage is written to `dist/FarukPaint-<version>-x86_64.AppImage`.
 
 ---
 
@@ -143,28 +145,28 @@ Every `v*` git tag triggers the GitHub Actions release workflow, which publishes
 
 | Platform | Artifact |
 | :--- | :--- |
-| Linux x86_64 | `AnimPaint-<version>-x86_64.AppImage` |
-| Windows x86_64 | `AnimPaint-<version>-windows-x86_64.zip` (includes `SDL2.dll`) |
-| Windows x86_64 | `AnimPaint-<version>-windows-x86_64.exe` |
+| Linux x86_64 | `FarukPaint-<version>-x86_64.AppImage` |
+| Windows x86_64 | `FarukPaint-<version>-windows-x86_64.zip` (includes `SDL2.dll`) |
+| Windows x86_64 | `FarukPaint-<version>-windows-x86_64.exe` |
 
 > **Note:** MP4 and GIF export shells out to `ffmpeg`. Install it with your package manager, or add `ffmpeg.exe` to `PATH` on Windows. The core painting/animation features work without it.
 >
-> **Windows note:** if you add FFmpeg to `PATH` while AnimPaint is already open, restart the app — running processes keep the environment they were started with. AnimPaint also probes `C:\ffmpeg\bin`, `C:\Program Files\ffmpeg\bin` and `C:\Program Files (x86)\ffmpeg\bin` automatically. On failure it now names the exact reason, and FFmpeg's own error output is written to `<output>.ffmpeg.log`.
+> **Windows note:** if you add FFmpeg to `PATH` while Faruk Paint is already open, restart the app — running processes keep the environment they were started with. Faruk Paint also probes `C:\ffmpeg\bin`, `C:\Program Files\ffmpeg\bin` and `C:\Program Files (x86)\ffmpeg\bin` automatically. On failure it now names the exact reason, and FFmpeg's own error output is written to `<output>.ffmpeg.log`.
 
 ---
 
 ## 📁 Project Architecture
 ```
-anim-paint/
+faruk-paint/
 ├── Makefile                      # Clean compilation build script
 ├── README.md                     # Documentation & guide
 ├── LICENSE                       # GNU GPL v3.0
 ├── assets/
-│   ├── animpaint.svg             # Vector app icon
-│   └── animpaint.png             # 256x256 icon used by the AppImage
+│   ├── farukpaint.svg             # Vector app icon
+│   └── farukpaint.png             # 256x256 icon used by the AppImage
 ├── packaging/
 │   ├── AppRun                    # AppImage launcher
-│   ├── animpaint.desktop         # Linux desktop entry
+│   ├── farukpaint.desktop         # Linux desktop entry
 │   ├── build-appimage.sh         # Linux AppImage builder
 │   └── build-windows.sh          # Portable Windows builder (MSYS2)
 ├── .github/workflows/
@@ -174,16 +176,16 @@ anim-paint/
 │   ├── canvas.h/c                # 2-layer canvas data structures, compositing & onion skin
 │   ├── tools.h/c                 # 16 classic drawing tools & shape algorithms
 │   ├── ui.h/c                    # Retro Windows 95 beveled UI & timeline renderer
-│   ├── export.h/c                # FFmpeg pipe exporter for MP4, GIF & .anp project format
+│   ├── export.h/c                # FFmpeg pipe exporter for MP4, GIF & .fpaint project format
 │   └── font.h/c                  # Embedded 8x8 retro bitmap font
 └── tests/
-    └── test_anim.c               # Automated test suite
+    └── test_farukpaint.c               # Automated test suite
 ```
 
 ---
 
 ## 📜 License
 
-AnimPaint is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation.
+Faruk Paint is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation.
 
 See [LICENSE](LICENSE) for the full text. This program is distributed in the hope that it will be useful, but **WITHOUT ANY WARRANTY**; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.

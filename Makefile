@@ -20,7 +20,7 @@ LIBS ?= $(SDL_LIBS) -lm
 
 SRC = src/main.c src/canvas.c src/tools.c src/ui.c src/font.c src/export.c
 OBJ = $(SRC:src/%.c=build/%.o)
-TARGET = animpaint
+TARGET = farukpaint
 
 all: build $(TARGET)
 
@@ -34,14 +34,14 @@ $(TARGET): $(OBJ)
 	$(CC) $(OBJ) -o $@ $(LIBS)
 
 clean:
-	rm -rf build $(TARGET) output.mp4 output.gif project.anp
+	rm -rf build $(TARGET) output.mp4 output.gif project.fpaint
 
 run: $(TARGET)
 	./$(TARGET)
 
 test: $(TARGET)
-	$(CC) $(CFLAGS) tests/test_anim.c src/canvas.c src/tools.c src/font.c src/export.c -o tests/test_anim $(LIBS)
-	cd tests && ./test_anim
+	$(CC) $(CFLAGS) tests/test_farukpaint.c src/canvas.c src/tools.c src/font.c src/export.c -o tests/test_farukpaint $(LIBS)
+	cd tests && ./test_farukpaint
 
 appimage: $(TARGET)
 	VERSION=$(VERSION) packaging/build-appimage.sh

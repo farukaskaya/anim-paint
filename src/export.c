@@ -9,13 +9,13 @@
 #include <io.h>
 #include <fcntl.h>
 #include <windows.h>
-#define ANP_POPEN  _popen
-#define ANP_PCLOSE _pclose
-#define ANP_NULL_DEVICE "NUL"
+#define FP_POPEN  _popen
+#define FP_PCLOSE _pclose
+#define FP_NULL_DEVICE "NUL"
 #else
-#define ANP_POPEN  popen
-#define ANP_PCLOSE pclose
-#define ANP_NULL_DEVICE "/dev/null"
+#define FP_POPEN  popen
+#define FP_PCLOSE pclose
+#define FP_NULL_DEVICE "/dev/null"
 #endif
 
 /* Last export failure, shown in the status bar. */
@@ -52,12 +52,12 @@ static void export_pipe_binary(FILE *pipe) {
 static bool export_ffmpeg_available(void) {
     if (g_ffmpeg_path[0] != '\0') return true;
 
-    FILE *probe = ANP_POPEN("ffmpeg -version", "r");
+    FILE *probe = FP_POPEN("ffmpeg -version", "r");
     if (probe) {
         export_pipe_binary(probe);
         char buf[16];
         size_t got = fread(buf, 1, sizeof(buf), probe);
-        int status = ANP_PCLOSE(probe);
+        int status = FP_PCLOSE(probe);
         if (got > 0 && status == 0) {
             strncpy(g_ffmpeg_path, "ffmpeg", sizeof(g_ffmpeg_path) - 1);
             return true;
@@ -81,7 +81,7 @@ static bool export_ffmpeg_available(void) {
     }
 #endif
 
-    export_set_error("FFmpeg not found. Install FFmpeg or add ffmpeg.exe to PATH, then restart AnimPaint.");
+    export_set_error("FFmpeg not found. Install FFmpeg or add ffmpeg.exe to PATH, then restart Faruk Paint.");
     return false;
 }
 
@@ -160,7 +160,7 @@ static bool export_run(CanvasProject *proj, const char *filepath, int fps,
         "%s -y -f rawvideo -pix_fmt rgba -s %dx%d -r %d -i - %s \"%s\" 2> \"%s\"",
         g_ffmpeg_path, w, h, fps, ffmpeg_args, filepath, log_path);
 
-    FILE *pipe = ANP_POPEN(cmd, "w");
+    FILE *pipe = FP_POPEN(cmd, "w");
     if (!pipe) {
         free(frame_buffer);
         export_set_error("Could not start FFmpeg. Check that it is installed and on PATH.");
@@ -172,7 +172,7 @@ static bool export_run(CanvasProject *proj, const char *filepath, int fps,
         composite_frame_to_buffer(proj, i, frame_buffer);
         size_t written = fwrite(frame_buffer, sizeof(uint32_t), (size_t)total_pixels, pipe);
         if (written < (size_t)total_pixels) {
-            ANP_PCLOSE(pipe);
+            FP_PCLOSE(pipe);
             free(frame_buffer);
             export_set_error("Failed while writing frames to FFmpeg. See %s", log_path);
             return false;
@@ -180,7 +180,7 @@ static bool export_run(CanvasProject *proj, const char *filepath, int fps,
     }
 
     free(frame_buffer);
-    int status = ANP_PCLOSE(pipe);
+    int status = FP_PCLOSE(pipe);
 
     if (status != 0) {
         export_set_error("FFmpeg failed (exit code %d). See %s", status, log_path);
@@ -208,7 +208,7 @@ bool export_image_sequence(CanvasProject *proj, const char *pattern_path, int fp
 }
 
 /* Save project format:
-   Magic "ANP1" (4 bytes)
+   Magic "FPNT" (4 bytes)
    width (int32)
    height (int32)
    frame_count (int32)
@@ -229,7 +229,7 @@ bool project_save(CanvasProject *proj, const char *filepath) {
         return false;
     }
 
-    const char magic[4] = { 'A', 'N', 'P', '1' };
+    const char magic[4] = { 'F', 'P', 'N', 'T' };
     fwrite(magic, 1, 4, f);
 
     int32_t header[4] = {
@@ -263,9 +263,9 @@ CanvasProject *project_load(const char *filepath) {
     }
 
     char magic[4];
-    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "ANP1", 4) != 0) {
+    if (fread(magic, 1, 4, f) != 4 || memcmp(magic, "FPNT", 4) != 0) {
         fclose(f);
-        export_set_error("%s is not a valid .anp project.", filepath);
+        export_set_error("%s is not a valid .fpaint project.", filepath);
         return NULL;
     }
 

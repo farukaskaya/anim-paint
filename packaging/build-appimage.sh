@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a self-contained Linux AppImage for AnimPaint.
+# Build a self-contained Linux AppImage for Faruk Paint.
 # Requires: gcc, make, libsdl2-dev, curl (or APPIMAGETOOL pointing to appimagetool)
 set -euo pipefail
 
@@ -7,8 +7,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${VERSION:-1.0.0}"
 ARCH="${ARCH:-x86_64}"
 DIST="$ROOT/dist"
-APPDIR="$DIST/AnimPaint.AppDir"
-OUT="$DIST/AnimPaint-${VERSION}-${ARCH}.AppImage"
+APPDIR="$DIST/FarukPaint.AppDir"
+OUT="$DIST/FarukPaint-${VERSION}-${ARCH}.AppImage"
 
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
@@ -17,17 +17,17 @@ mkdir -p "$APPDIR/usr/bin" "$APPDIR/usr/lib" \
 
 make -C "$ROOT" clean all
 
-cp "$ROOT/animpaint" "$APPDIR/usr/bin/animpaint"
+cp "$ROOT/farukpaint" "$APPDIR/usr/bin/farukpaint"
 cp "$ROOT/packaging/AppRun" "$APPDIR/AppRun"
-chmod +x "$APPDIR/AppRun" "$APPDIR/usr/bin/animpaint"
+chmod +x "$APPDIR/AppRun" "$APPDIR/usr/bin/farukpaint"
 
-cp "$ROOT/packaging/animpaint.desktop" "$APPDIR/animpaint.desktop"
-cp "$ROOT/packaging/animpaint.desktop" "$APPDIR/usr/share/applications/animpaint.desktop"
-cp "$ROOT/assets/animpaint.png" "$APPDIR/animpaint.png"
-cp "$ROOT/assets/animpaint.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/animpaint.png"
+cp "$ROOT/packaging/farukpaint.desktop" "$APPDIR/farukpaint.desktop"
+cp "$ROOT/packaging/farukpaint.desktop" "$APPDIR/usr/share/applications/farukpaint.desktop"
+cp "$ROOT/assets/farukpaint.png" "$APPDIR/farukpaint.png"
+cp "$ROOT/assets/farukpaint.png" "$APPDIR/usr/share/icons/hicolor/256x256/apps/farukpaint.png"
 
 # Bundle the SDL2 shared library if it is dynamically linked.
-SDL_LIB="$(ldd "$ROOT/animpaint" | awk '/libSDL2/ { print $3; exit }')"
+SDL_LIB="$(ldd "$ROOT/farukpaint" | awk '/libSDL2/ { print $3; exit }')"
 if [ -n "$SDL_LIB" ] && [ -f "$SDL_LIB" ]; then
     cp -L "$SDL_LIB" "$APPDIR/usr/lib/"
 fi
@@ -35,7 +35,7 @@ fi
 TOOL="${APPIMAGETOOL:-}"
 if [ -z "$TOOL" ]; then
     # Keep the tool outside dist/ so it is never uploaded as a release asset.
-    CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/anim-paint"
+    CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/faruk-paint"
     mkdir -p "$CACHE_DIR"
     TOOL="$CACHE_DIR/appimagetool-${ARCH}.AppImage"
     if [ ! -x "$TOOL" ]; then
